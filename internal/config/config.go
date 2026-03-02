@@ -1,6 +1,8 @@
 package config
 
 import (
+	"strings"
+
 	"github.com/spf13/viper"
 )
 
@@ -33,6 +35,31 @@ var defaultServerValues = map[string]any{
 	"log_level": "info",
 }
 
+func LoadConfig() error {
+	viper.AutomaticEnv()
+	viper.SetConfigName("config")
+	viper.SetConfigType("toml")
+	viper.AddConfigPath(".")
+	viper.AddConfigPath("./config")
+	err := viper.ReadInConfig()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
+func LoadConfigWithPath(path string) error {
+	viper.AutomaticEnv()
+	viper.SetConfigName("config")
+	viper.SetConfigType("toml")
+	viper.AddConfigPath(path)
+	err := viper.ReadInConfig()
+	if err != nil {
+		return err
+	}
+	return nil
+}
+
 func InitConfig(side Side) {
 	var value map[string]any
 	switch side {
@@ -44,9 +71,20 @@ func InitConfig(side Side) {
 	for k, v := range value {
 		viper.SetDefault(k, v)
 	}
+
+	viper.WriteConfigAs("config.toml")
 }
 
-func CheckConfig(side Side) {
+type ConfigNotSetError struct {
+	Code int
+	Msg  string
+}
+
+func (e *ConfigNotSetError) Error() string {
+	return e.Msg
+}
+
+func CheckConfig(side Side) error {
 	var value map[string]any
 	switch side {
 	case Client:
@@ -54,9 +92,17 @@ func CheckConfig(side Side) {
 	case Server:
 		value = defaultServerValues
 	}
+	var MissingConfigs []string
 	for k := range value {
 		if !viper.IsSet(k) {
-			panic("Config value " + k + " is not set")
+			MissingConfigs = append(MissingConfigs, k)
 		}
 	}
+	if len(MissingConfigs) > 0 {
+		return &ConfigNotSetError{
+			Code: 1,
+			Msg:  "Missing configs: " + strings.Join(MissingConfigs, ", "),
+		}
+	}
+	return nil
 }

@@ -1,20 +1,59 @@
 package main
 
 import (
-	"os"
-
 	"LEPG/internal/config"
+	"LEPG/internal/server"
+	"fmt"
+	"os"
+	"sync"
+
 	"github.com/spf13/cobra"
 )
+
+var cfgFile string
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
 	Use:   "lepgs",
 	Short: "Server for LEPG",
 	Long:  `LEPG server is a lightweight IoT gateway provides high performance, low power consumption, and easy to use.`,
-	// Uncomment the following line if your bare application
-	// has an action associated with it:
-	// Run: func(cmd *cobra.Command, args []string) { },
+}
+
+var runCmd = &cobra.Command{
+	Use:   "run",
+	Short: "Run LEPG server",
+	Long:  `Run LEPG server to start receive and process loops.`,
+	Run: func(cmd *cobra.Command, args []string) {
+		if cfgFile == "" {
+			if err := config.LoadConfig(); err != nil {
+				fmt.Printf("Failed to load config: %v\n", err)
+				os.Exit(1)
+			}
+		} else {
+			if err := config.LoadConfigWithPath(cfgFile); err != nil {
+				fmt.Printf("Failed to load config from %s: %v\n", cfgFile, err)
+				os.Exit(1)
+			}
+		}
+
+		if err := config.CheckConfig(config.Server); err != nil {
+			fmt.Printf("Config validation failed: %v\n", err)
+			os.Exit(1)
+		}
+
+		var wg sync.WaitGroup
+		wg.Go(func() {
+			if err := server.ReceiveLoop(); err != nil {
+				fmt.Printf("Receive loop error: %v\n", err)
+			}
+		})
+		wg.Go(func() {
+			if err := server.ProcessLoop(); err != nil {
+				fmt.Printf("Process loop error: %v\n", err)
+			}
+		})
+		wg.Wait()
+	},
 }
 
 // Execute adds all child commands to the root command and sets flags appropriately.
@@ -31,8 +70,24 @@ var initCmd = &cobra.Command{
 	Short: "Initialize LEPG",
 	Long:  `Initialize LEPG`,
 	Run: func(cmd *cobra.Command, args []string) {
+		if cfgFile == "" {
+			if err := config.LoadConfig(); err == nil {
+				fmt.Println("Config file already exists. Please delete config.toml before initializing.")
+				os.Exit(1)
+			}
+		} else {
+			if err := config.LoadConfigWithPath(cfgFile); err == nil {
+				fmt.Printf("Config file already exists at %s. Please delete it before initializing.\n", cfgFile)
+				os.Exit(1)
+			}
+		}
+
 		config.InitConfig(config.Server)
-		config.CheckConfig(config.Server)
+		if err := config.CheckConfig(config.Server); err != nil {
+			fmt.Printf("Config validation failed: %v\n", err)
+			os.Exit(1)
+		}
+		fmt.Println("LEPG server initialized successfully.")
 	},
 }
 
@@ -40,13 +95,13 @@ func init() {
 	// Here you will define your flags and configuration settings.
 	// Cobra supports persistent flags, which, if defined here,
 	// will be global for your application.
-
-	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.LEPG.yaml)")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default is ./config.toml or ./config/config.toml)")
 
 	// Cobra also supports local flags, which will only run
 	// when this action is called directly.
 	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
 	rootCmd.AddCommand(initCmd)
+	rootCmd.AddCommand(runCmd)
 }
 
 func main() {
