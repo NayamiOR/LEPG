@@ -34,3 +34,16 @@ build:
 echo:
 	echo "Hello"
 
+# 测试相关命令
+test:
+	go test -v ./...
+
+test-config:
+	go test -v ./internal/config/...
+
+test-coverage:
+	go test -coverprofile=coverage.out ./... && go tool cover -html=coverage.out -o coverage.html
+
+test-race:
+	go test -race -v ./...
+
