@@ -11,6 +11,7 @@ import (
 )
 
 var cfgFile string
+var flagPort int
 
 // rootCmd represents the base command when called without any subcommands
 var rootCmd = &cobra.Command{
@@ -24,6 +25,9 @@ var runCmd = &cobra.Command{
 	Short: "Run LEPG server",
 	Long:  `Run LEPG server to start receive and process loops.`,
 	Run: func(cmd *cobra.Command, args []string) {
+		// Set flag values first (higher priority than config file)
+		config.SetFlagValues("", flagPort)
+
 		if cfgFile == "" {
 			if err := config.LoadConfig(); err != nil {
 				fmt.Printf("Failed to load config: %v\n", err)
@@ -97,9 +101,9 @@ func init() {
 	// will be global for your application.
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default is ./config.toml or ./config/config.toml)")
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Server-specific flags for run command
+	runCmd.Flags().IntVarP(&flagPort, "port", "p", 0, "server port (overrides config file)")
+
 	rootCmd.AddCommand(initCmd)
 	rootCmd.AddCommand(runCmd)
 }
