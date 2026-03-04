@@ -47,3 +47,14 @@ test-coverage:
 test-race:
 	go test -race -v ./...
 
+# 帮助信息
+help:
+	@echo "Available targets:"
+	@echo "  build          - Build the application"
+	@echo "  build-dev      - Build with race detection (dev mode)"
+	@echo "  build-all      - Build for all platforms"
+	@echo "  test           - Run tests"
+	@echo "  test-coverage  - Run tests with coverage report"
+	@echo "  clean          - Clean build artifacts"
+	@echo "  version        - Show version information"
+	@echo "  help           - Show this help message"
