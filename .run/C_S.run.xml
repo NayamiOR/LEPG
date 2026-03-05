@@ -1,0 +1,7 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="C/S" type="CompoundRunConfigurationType">
+    <toRun name="go build LEPG/cmd/client" type="GoApplicationRunConfiguration" />
+    <toRun name="go build LEPG/cmd/server" type="GoApplicationRunConfiguration" />
+    <method v="2" />
+  </configuration>
+</component>

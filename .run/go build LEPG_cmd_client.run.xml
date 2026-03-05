@@ -1,0 +1,12 @@
+<component name="ProjectRunConfigurationManager">
+  <configuration default="false" name="go build LEPG/cmd/client" type="GoApplicationRunConfiguration" factoryName="Go Application" nameIsGenerated="true">
+    <module name="LEPG" />
+    <working_directory value="$PROJECT_DIR$" />
+    <parameters value="run " />
+    <kind value="PACKAGE" />
+    <package value="LEPG/cmd/client" />
+    <directory value="$PROJECT_DIR$" />
+    <filePath value="$PROJECT_DIR$/cmd/client/main.go" />
+    <method v="2" />
+  </configuration>
+</component>
