@@ -48,15 +48,11 @@ var runCmd = &cobra.Command{
 
 		var wg sync.WaitGroup
 		wg.Go(func() {
-			if err := client.InputLoop(); err != nil {
+			if err := client.MainFunc(); err != nil {
 				fmt.Printf("Input loop error: %v\n", err)
 			}
 		})
-		wg.Go(func() {
-			if err := client.UploadLoop(); err != nil {
-				fmt.Printf("Upload loop error: %v\n", err)
-			}
-		})
+
 		wg.Wait()
 	},
 }

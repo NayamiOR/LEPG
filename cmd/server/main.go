@@ -51,11 +51,7 @@ var runCmd = &cobra.Command{
 				fmt.Printf("Receive loop error: %v\n", err)
 			}
 		})
-		wg.Go(func() {
-			if err := server.ProcessLoop(); err != nil {
-				fmt.Printf("Process loop error: %v\n", err)
-			}
-		})
+
 		wg.Wait()
 	},
 }
