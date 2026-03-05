@@ -2,7 +2,9 @@ package config
 
 import (
 	"fmt"
+	"os"
 	"strings"
+	"sync"
 
 	"github.com/spf13/viper"
 )
@@ -21,7 +23,7 @@ type ClientConfig struct {
 }
 
 type ServerConfig struct {
-	Port     string `mapstructure:"port"`
+	Port     int    `mapstructure:"port"`
 	LogLevel string `mapstructure:"log_level"`
 }
 
@@ -37,9 +39,9 @@ const (
 // 可以通过 ldflags 在编译时修改这些值
 // 例如: go build -ldflags "-X 'LEPG/internal/config.BuildVersion=1.0.0'"
 var (
-	BuildVersion = "dev"       // 构建版本
-	BuildTime   = "unknown"   // 构建时间
-	GitCommit   = "unknown"   // Git提交哈希
+	BuildVersion = "dev"     // 构建版本
+	BuildTime    = "unknown" // 构建时间
+	GitCommit    = "unknown" // Git提交哈希
 )
 
 // GetVersionInfo 返回应用的版本信息
@@ -59,6 +61,17 @@ var defaultServerValues = map[string]any{
 	"log_level": DefaultLogLevel,
 }
 
+// ==================== 单例状态 ====================
+var (
+	clientConfigInstance *ClientConfig
+	clientConfigOnce     sync.Once
+	clientConfigErr      error
+
+	serverConfigInstance *ServerConfig
+	serverConfigOnce     sync.Once
+	serverConfigErr      error
+)
+
 // SetFlagValues sets the values from command line flags before loading config
 // This ensures flag values have higher priority than config file values
 func SetFlagValues(serverUrl string, port int) {
@@ -70,7 +83,33 @@ func SetFlagValues(serverUrl string, port int) {
 	}
 }
 
+// loadDotEnv 尝试加载 .env 文件（如果存在）
+// .env 文件的值会被环境变量覆盖，但会覆盖 TOML 配置文件的值
+func loadDotEnv() {
+	// 检查 .env 文件是否存在
+	if _, err := os.Stat(".env"); os.IsNotExist(err) {
+		// .env 文件不存在，跳过
+		return
+	}
+
+	// 设置 .env 文件配置
+	viper.SetConfigFile(".env")
+	viper.SetConfigType("env")
+
+	// 读取 .env 文件（非致命错误，文件不存在或格式错误不会中断程序）
+	if err := viper.MergeInConfig(); err != nil {
+		// 如果是配置文件未找到错误，忽略
+		if _, ok := err.(viper.ConfigFileNotFoundError); !ok {
+			// 其他错误（如格式错误）也忽略，.env 是可选的
+			fmt.Printf("Warning: Error reading .env file: %v\n", err)
+		}
+	}
+}
+
 func LoadConfig() error {
+	// 尝试加载 .env 文件（如果存在）
+	loadDotEnv()
+
 	viper.AutomaticEnv()
 	viper.SetConfigName("config")
 	viper.SetConfigType("toml")
@@ -84,6 +123,9 @@ func LoadConfig() error {
 }
 
 func LoadConfigWithPath(path string) error {
+	// 尝试加载 .env 文件（如果存在）
+	loadDotEnv()
+
 	viper.AutomaticEnv()
 	viper.SetConfigName("config")
 	viper.SetConfigType("toml")
@@ -140,4 +182,53 @@ func CheckConfig(side Side) error {
 		}
 	}
 	return nil
+}
+
+// ==================== 单例访问函数 ====================
+
+// unmarshalClientConfig 从 viper 反序列化客户端配置
+func unmarshalClientConfig() (*ClientConfig, error) {
+	cfg := &ClientConfig{}
+	if err := viper.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal client config: %w", err)
+	}
+	return cfg, nil
+}
+
+// unmarshalServerConfig 从 viper 反序列化服务端配置
+func unmarshalServerConfig() (*ServerConfig, error) {
+	cfg := &ServerConfig{}
+	if err := viper.Unmarshal(cfg); err != nil {
+		return nil, fmt.Errorf("failed to unmarshal server config: %w", err)
+	}
+	return cfg, nil
+}
+
+// GetClientConfig 返回客户端配置单例
+// 必须在 SetFlagValues() 和 LoadConfig() 之后调用
+func GetClientConfig() (*ClientConfig, error) {
+	clientConfigOnce.Do(func() {
+		clientConfigInstance, clientConfigErr = unmarshalClientConfig()
+	})
+	return clientConfigInstance, clientConfigErr
+}
+
+// GetServerConfig 返回服务端配置单例
+// 必须在 SetFlagValues() 和 LoadConfig() 之后调用
+func GetServerConfig() (*ServerConfig, error) {
+	serverConfigOnce.Do(func() {
+		serverConfigInstance, serverConfigErr = unmarshalServerConfig()
+	})
+	return serverConfigInstance, serverConfigErr
+}
+
+// ResetSingletons 重置单例状态（仅用于测试）
+func ResetSingletons() {
+	clientConfigInstance = nil
+	clientConfigOnce = sync.Once{}
+	clientConfigErr = nil
+
+	serverConfigInstance = nil
+	serverConfigOnce = sync.Once{}
+	serverConfigErr = nil
 }

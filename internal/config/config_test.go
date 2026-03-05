@@ -121,10 +121,10 @@ func TestScenario2_NoConfig(t *testing.T) {
 // TestScenario3_OnlyConfigFile 测试从配置文件读取配置
 func TestScenario3_OnlyConfigFile(t *testing.T) {
 	tests := []struct {
-		name         string
+		name          string
 		configContent string
 		setupFunc     func(string) string
-		verifyFunc   func()
+		verifyFunc    func()
 	}{
 		{
 			name: "从当前目录读取",
@@ -231,10 +231,10 @@ func TestScenario4_FlagOverride(t *testing.T) {
 		expectLog     string
 	}{
 		{
-			name: "只有flag（没有配置文件）",
-			flagServer: "http://flag-only.com",
-			flagPort:   9999,
-			manualSet:  map[string]string{"log_level": "debug"},
+			name:         "只有flag（没有配置文件）",
+			flagServer:   "http://flag-only.com",
+			flagPort:     9999,
+			manualSet:    map[string]string{"log_level": "debug"},
 			expectServer: "http://flag-only.com",
 			expectPort:   9999,
 			expectLog:    "debug",
@@ -245,9 +245,9 @@ func TestScenario4_FlagOverride(t *testing.T) {
 port = 8080
 log_level = "info"
 `,
-			flagServer: "http://flag.com",
-			flagPort:   9999,
-			manualSet:  map[string]string{"log_level": "debug"},
+			flagServer:   "http://flag.com",
+			flagPort:     9999,
+			manualSet:    map[string]string{"log_level": "debug"},
 			expectServer: "http://flag.com",
 			expectPort:   9999,
 			expectLog:    "debug",
@@ -261,7 +261,7 @@ log_level = "warn"
 			flagServer: "http://flag.com",
 			// flagPort = 0 表示不设置
 			expectServer: "http://flag.com",
-			expectPort:   8080, // 来自配置文件
+			expectPort:   8080,   // 来自配置文件
 			expectLog:    "warn", // 来自配置文件
 		},
 		{
@@ -270,10 +270,10 @@ log_level = "warn"
 port = 8080
 log_level = "info"
 `,
-			flagPort:   9999,
+			flagPort:     9999,
 			expectServer: "http://config.com", // 来自配置文件
-			expectPort:   9999, // 来自 flag
-			expectLog:    "info", // 来自配置文件
+			expectPort:   9999,                // 来自 flag
+			expectLog:    "info",              // 来自配置文件
 		},
 	}
 
@@ -422,5 +422,115 @@ func TestScenario5_MissingConfigError(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// ==================== 单例模式测试 ====================
+
+// TestGetClientConfig_Singleton 测试客户端配置单例的基本功能
+func TestGetClientConfig_Singleton(t *testing.T) {
+	tempDir, _ := setupTempDir(t)
+	defer viper.Reset()
+	defer ResetSingletons()
+
+	createConfigFile(t, tempDir, `server = "http://test.com"
+port = 8080
+log_level = "debug"
+`)
+
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	// 获取配置
+	cfg, err := GetClientConfig()
+	if err != nil {
+		t.Fatalf("获取配置失败: %v", err)
+	}
+
+	// 验证值
+	if cfg.ServerUrl != "http://test.com" {
+		t.Errorf("ServerUrl 期望 'http://test.com', 实际 '%s'", cfg.ServerUrl)
+	}
+	if cfg.Port != 8080 {
+		t.Errorf("Port 期望 8080, 实际 %d", cfg.Port)
+	}
+	if cfg.LogLevel != "debug" {
+		t.Errorf("LogLevel 期望 'debug', 实际 '%s'", cfg.LogLevel)
+	}
+
+	// 再次调用，应该返回同一个实例
+	cfg2, _ := GetClientConfig()
+	if cfg != cfg2 {
+		t.Error("应该返回同一个实例")
+	}
+}
+
+// TestGetServerConfig_Singleton 测试服务端配置单例
+func TestGetServerConfig_Singleton(t *testing.T) {
+	tempDir, _ := setupTempDir(t)
+	defer viper.Reset()
+	defer ResetSingletons()
+
+	createConfigFile(t, tempDir, `port = 9999
+log_level = "info"
+`)
+
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	cfg, err := GetServerConfig()
+	if err != nil {
+		t.Fatalf("获取配置失败: %v", err)
+	}
+
+	// 验证 Port 类型是 int
+	if cfg.Port != 9999 {
+		t.Errorf("Port 期望 9999, 实际 %d (类型: %T)", cfg.Port, cfg.Port)
+	}
+	if cfg.LogLevel != "info" {
+		t.Errorf("LogLevel 期望 'info', 实际 '%s'", cfg.LogLevel)
+	}
+
+	// 验证单例
+	cfg2, _ := GetServerConfig()
+	if cfg != cfg2 {
+		t.Error("应该返回同一个实例")
+	}
+}
+
+// TestGetClientConfig_FlagOverride 测试 flag 覆盖配置文件
+func TestGetClientConfig_FlagOverride(t *testing.T) {
+	tempDir, _ := setupTempDir(t)
+	defer viper.Reset()
+	defer ResetSingletons()
+
+	// 创建配置文件
+	createConfigFile(t, tempDir, `server = "http://config.com"
+port = 8080
+log_level = "info"
+`)
+
+	// 先设置 flag
+	SetFlagValues("http://flag.com", 9999)
+
+	// 再加载配置文件（flag 优先级更高）
+	if err := LoadConfig(); err != nil {
+		t.Fatalf("加载配置失败: %v", err)
+	}
+
+	// 获取配置
+	cfg, err := GetClientConfig()
+	if err != nil {
+		t.Fatalf("获取配置失败: %v", err)
+	}
+
+	// 验证 flag 值覆盖了配置文件
+	if cfg.ServerUrl != "http://flag.com" {
+		t.Errorf("ServerUrl 应该是 flag 值 'http://flag.com', 实际 '%s'", cfg.ServerUrl)
+	}
+	if cfg.Port != 9999 {
+		t.Errorf("Port 应该是 flag 值 9999, 实际 %d", cfg.Port)
 	}
 }
