@@ -22,7 +22,13 @@ else
 	MKDIR_P = mkdir -p
 endif
 
-run: clean build
+run:
+
+run-client:
+	go run $(call FixPath, ./cmd/client/main.go) run
+
+run-server:
+	go run $(call FixPath, ./cmd/server/main.go) run
 
 clean:
 	$(RM) $(call FixPath,$(BIN_DIR)/*)
@@ -30,7 +36,7 @@ clean:
 build:
 	go build -o $(call FixPath,$(BIN_DIR)/lepgc$(EXEC_EXT)) $(call FixPath, ./cmd/client)
 	go build -o $(call FixPath,$(BIN_DIR)/lepgs$(EXEC_EXT)) $(call FixPath, ./cmd/server)
-	
+
 echo:
 	echo "Hello"
 

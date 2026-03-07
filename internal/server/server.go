@@ -15,6 +15,7 @@ func ReceiveLoop() error {
 		return err
 	}
 	defer ln.Close()
+	slog.Info("server started", "port", cfg.Port)
 
 	for {
 		conn, err := ln.Accept()
@@ -22,12 +23,14 @@ func ReceiveLoop() error {
 			return err
 		}
 		// TODO: handle connection
+		slog.Info("accepted connection")
 		go HandleConnection(conn)
 	}
 }
 
 func HandleConnection(conn net.Conn) {
 	defer conn.Close()
+	slog.Info("start listening")
 
 	buf := make([]byte, 1024)
 	for {

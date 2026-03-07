@@ -3,11 +3,30 @@ package client
 import (
 	"LEPG/internal/config"
 	"fmt"
+	"log/slog"
 	"net"
+	"sync"
 	"time"
 )
 
 func MainFunc() error {
+	wg := &sync.WaitGroup{}
+	wg.Go(func() {
+		if err := TestWrite(); err != nil {
+			slog.Error("TestWrite failed", "err", err)
+		}
+	})
+	wg.Go(func() {
+		if err := UploadLoop(); err != nil {
+			slog.Error("UploadLoop failed", "err", err)
+		}
+	})
+
+	wg.Wait()
+	return nil
+}
+
+func TestWrite() error {
 	x := 0
 
 	cfg, err := config.GetClientConfig()
@@ -25,9 +44,10 @@ func MainFunc() error {
 		if err != nil {
 			return err
 		}
-		time.Sleep(time.Second * 2)
+		time.Sleep(time.Nanosecond * 100)
 		x += 1
 	}
+
 }
 
 func UploadLoop() error {
