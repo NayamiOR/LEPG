@@ -40,7 +40,7 @@ func TestWrite() error {
 
 	for {
 		fmt.Println(x)
-		_, err := conn.Write([]byte(fmt.Sprintf("hello %d", x)))
+		_, err := fmt.Fprintf(conn, "hello %d", x)
 		if err != nil {
 			return err
 		}
