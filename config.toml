@@ -1,3 +1,20 @@
-server = "127.0.0.1"
+# 服务端配置
 port = 8883
 log_level = "info"
+
+# 客户端列表配置
+# 定义允许连接到服务器的客户端
+[[clients]]
+sn = "CLIENT001"
+token = "token123456"
+description = "测试客户端1"
+
+[[clients]]
+sn = "CLIENT002"
+token = "token789012"
+description = "测试客户端2"
+
+[[clients]]
+sn = "CLIENT003"
+token = "token345678"
+description = "生产环境客户端"
