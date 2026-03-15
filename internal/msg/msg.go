@@ -37,23 +37,29 @@ type Msg struct {
 	Checksum   uint16
 }
 
-type idGenerator struct {
+type idGenerator interface {
+	Next() uint16
+}
+
+type atomicIdGenerator struct {
 	current atomic.Uint32
 }
 
-func (g *idGenerator) Next() uint16 {
+func (g *atomicIdGenerator) Next() uint16 {
 	return uint16(g.current.Add(1) % 65536)
 }
 
-var globalIDGen = &idGenerator{}
+type MsgFactory struct {
+	idGen idGenerator
+}
 
-func NewMsg(flags uint8, t uint8, payload []byte) *Msg {
+func (f *MsgFactory) NewMsg(flags uint8, t uint8, payload []byte) *Msg {
 	return &Msg{
 		Magic:      MagicNumber,
 		Version:    version,
 		Flags:      flags,
 		Type:       t,
-		MsgID:      globalIDGen.Next(),
+		MsgID:      f.idGen.Next(),
 		PayloadLen: uint16(len(payload)),
 		Timestamp:  utils.NewTimestamp(),
 		Payload:    payload,
