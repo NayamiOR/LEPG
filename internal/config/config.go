@@ -20,11 +20,20 @@ type ClientConfig struct {
 	ServerUrl string `mapstructure:"server"`
 	Port      int    `mapstructure:"port"`
 	LogLevel  string `mapstructure:"log_level"`
+	Sn        string `mapstructure:"sn"`
+	Token     string `mapstructure:"token"`
 }
 
 type ServerConfig struct {
-	Port     int    `mapstructure:"port"`
-	LogLevel string `mapstructure:"log_level"`
+	Port     int         `mapstructure:"port"`
+	LogLevel string      `mapstructure:"log_level"`
+	Clients  []ClientDef `mapstructure:"clients"`
+}
+
+type ClientDef struct {
+	Sn          string `mapstructure:"sn"`
+	Token       string `mapstructure:"token"`
+	Description string `mapstructure:"description"`
 }
 
 // ==================== 编译期常量 ====================
@@ -54,6 +63,8 @@ var defaultClientValues = map[string]any{
 	"server":    DefaultServerHost,
 	"port":      DefaultServerPort,
 	"log_level": DefaultLogLevel,
+	"sn":        "",
+	"token":     "",
 }
 
 var defaultServerValues = map[string]any{
