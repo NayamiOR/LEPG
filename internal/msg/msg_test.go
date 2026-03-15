@@ -145,3 +145,44 @@ func TestDecodeErrors(t *testing.T) {
 		})
 	}
 }
+
+func TestNewMsg(t *testing.T) {
+	// Test auto-generated MsgID
+	msg1 := New(1, []byte("test"))
+	msg2 := New(2, []byte("hello"))
+
+	if msg1.Magic != MagicNumber {
+		t.Errorf("Expected MagicNumber, got %v", msg1.Magic)
+	}
+	if msg1.Version != 1 {
+		t.Errorf("Expected Version 1, got %v", msg1.Version)
+	}
+	if msg1.MsgID == msg2.MsgID {
+		t.Errorf("MsgIDs should be different: msg1=%v, msg2=%v", msg1.MsgID, msg2.MsgID)
+	}
+	if msg1.MsgID+1 != msg2.MsgID {
+		t.Errorf("MsgIDs should be sequential: msg1=%v, msg2=%v", msg1.MsgID, msg2.MsgID)
+	}
+
+	t.Logf("Auto-generated MsgIDs: msg1=%d, msg2=%d", msg1.MsgID, msg2.MsgID)
+
+	// Test manual MsgID
+	customMsg := NewWithID(3, 999, []byte("custom"))
+	if customMsg.MsgID != 999 {
+		t.Errorf("Expected custom MsgID 999, got %v", customMsg.MsgID)
+	}
+
+	// Test round-trip with auto-generated ID
+	encoded, err := msg1.Encode()
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+	decoded, err := Decode(encoded)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+	if !reflect.DeepEqual(decoded, msg1) {
+		t.Errorf("Round-trip failed\ngot:  %+v\nwant: %+v", decoded, msg1)
+	}
+}
+

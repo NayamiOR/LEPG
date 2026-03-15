@@ -1,8 +1,10 @@
 package msg
 
 import (
+	"LEPG/internal/utils"
 	"bytes"
 	"encoding/binary"
+	"sync/atomic"
 )
 
 const (
@@ -19,6 +21,10 @@ const (
 	CrcSize        int    = 2
 )
 
+const (
+	version uint8 = 1
+)
+
 type Msg struct {
 	Magic      uint16
 	Version    uint8
@@ -26,9 +32,33 @@ type Msg struct {
 	Type       uint8
 	MsgID      uint16
 	PayloadLen uint16
-	Timestamp  uint32
+	Timestamp  utils.Timestamp
 	Payload    []byte
 	Checksum   uint16
+}
+
+type idGenerator struct {
+	current atomic.Uint32
+}
+
+func (g *idGenerator) Next() uint16 {
+	return uint16(g.current.Add(1) % 65536)
+}
+
+var globalIDGen = &idGenerator{}
+
+func NewMsg(flags uint8, t uint8, payload []byte) *Msg {
+	return &Msg{
+		Magic:      MagicNumber,
+		Version:    version,
+		Flags:      flags,
+		Type:       t,
+		MsgID:      globalIDGen.Next(),
+		PayloadLen: uint16(len(payload)),
+		Timestamp:  utils.NewTimestamp(),
+		Payload:    payload,
+		Checksum:   utils.CalChecksum(payload),
+	}
 }
 
 func (m *Msg) Encode() ([]byte, error) {
