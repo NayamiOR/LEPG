@@ -2,6 +2,7 @@ package client
 
 import (
 	"LEPG/internal/config"
+	"LEPG/internal/msg"
 	"fmt"
 	"log/slog"
 	"net"
@@ -12,9 +13,9 @@ import (
 func MainFunc() error {
 	wg := &sync.WaitGroup{}
 	wg.Go(func() {
-		if err := TestWrite(); err != nil {
-			slog.Error("TestWrite failed", "err", err)
-		}
+		// if err := TestWrite(); err != nil {
+		// 	slog.Error("TestWrite failed", "err", err)
+		// }
 	})
 	wg.Go(func() {
 		if err := UploadLoop(); err != nil {
@@ -51,8 +52,64 @@ func TestWrite() error {
 }
 
 func UploadLoop() error {
-	for {
-		time.Sleep(time.Millisecond * 500)
+	cfg, err := config.GetClientConfig()
+	if err != nil {
+		return fmt.Errorf("failed to get client config: %w", err)
+	}
 
+	// 创建消息工厂
+	factory := msg.NewMsgFactory()
+
+	// 建立网络连接
+	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
+	if err != nil {
+		return fmt.Errorf("failed to connect to server %s:%d: %w", cfg.ServerUrl, cfg.Port, err)
+	}
+	defer conn.Close()
+
+	slog.Info("connected to server", "address", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
+
+	// mock 数据序列
+	mockData := []string{
+		"hello world",
+		"test message 1",
+		"test message 2",
+		"data upload test",
+		"heartbeat check",
+		"system status",
+	}
+
+	messageCount := 0
+	for {
+		// 获取 mock 数据
+		data := mockData[messageCount%len(mockData)]
+
+		// 创建消息
+		message := factory.NewMsg(0, msg.MsgTypeUpload, []byte(data))
+
+		// 编码消息
+		encodedData, err := message.Encode()
+		if err != nil {
+			slog.Error("failed to encode message", "error", err)
+			continue
+		}
+
+		// 发送消息
+		_, err = conn.Write(encodedData)
+		if err != nil {
+			return fmt.Errorf("failed to send message: %w", err)
+		}
+
+		messageCount++
+
+		slog.Info("sent message",
+			"count", messageCount,
+			"type", message.Type,
+			"msg_id", message.MsgID,
+			"payload_size", len(message.Payload),
+			"data", data)
+
+		// 等待一段时间再发送下一条消息
+		time.Sleep(time.Millisecond * 500)
 	}
 }
