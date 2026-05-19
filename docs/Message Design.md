@@ -1,4 +1,6 @@
-# Message Design
+# 消息设计
+
+## 消息包结构
 
 ```
 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1 2 3 4 5 6 7 8 9 0 1
@@ -16,3 +18,21 @@
 |   Checksum (2B, CRC16)        |
 +-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+-+
 ```
+
+Timestamp：4B的Unix时间戳，单位为毫秒，从2020年1月1日00:00:00 UTC开始计算。
+
+## Message Type
+
+目前定义了五种消息类型
+
+| 值 | 名称 | 用途 |
+|---|---|---|
+| 0x01 | `MsgTypeHandshake` | 握手消息 |
+| 0x02 | `MsgTypeAuth` | 认证消息 |
+| 0x03 | `MsgTypeHeartbeat` | 心跳消息 |
+| 0x04 | `MsgTypeError` | 错误消息 |
+| 0x05 | `MsgTypeUpload` | 上传数据消息
+
+## Flags
+
+暂未定义
