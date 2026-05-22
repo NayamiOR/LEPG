@@ -9,15 +9,15 @@ import (
 	"time"
 )
 
-func MainFunc() error {
+func MainFunc(cfg *ClientConfig) error {
 	wg := &sync.WaitGroup{}
 	wg.Go(func() {
-		// if err := TestWrite(); err != nil {
+		// if err := TestWrite(cfg); err != nil {
 		// 	slog.Error("TestWrite failed", "err", err)
 		// }
 	})
 	wg.Go(func() {
-		if err := UploadLoop(); err != nil {
+		if err := UploadLoop(cfg); err != nil {
 			slog.Error("UploadLoop failed", "err", err)
 		}
 	})
@@ -26,13 +26,9 @@ func MainFunc() error {
 	return nil
 }
 
-func TestWrite() error {
+func TestWrite(cfg *ClientConfig) error {
 	x := 0
 
-	cfg := GetClientConfig()
-	if cfg == nil {
-		return fmt.Errorf("client config not initialized")
-	}
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
 	if err != nil {
 		return err
@@ -50,12 +46,7 @@ func TestWrite() error {
 
 }
 
-func UploadLoop() error {
-	cfg := GetClientConfig()
-	if cfg == nil {
-		return fmt.Errorf("client config not initialized")
-	}
-
+func UploadLoop(cfg *ClientConfig) error {
 	// 创建消息工厂
 	factory := msg.NewMsgFactory()
 

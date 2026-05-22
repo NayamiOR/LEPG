@@ -1,21 +1,20 @@
 package server
 
 import (
-	"fmt"
-	"strings"
-	"github.com/spf13/viper"
+	"LEPG/internal/config"
+	"LEPG/internal/errors"
 )
 
 type ServerConfig struct {
-	Port     int         `mapstructure:"port"`
-	LogLevel string      `mapstructure:"log_level"`
-	Clients  []ClientDef `mapstructure:"clients"`
+	Port     int
+	LogLevel string
+	Clients  []ClientDef
 }
 
 type ClientDef struct {
-	Sn          string `mapstructure:"sn"`
-	Token       string `mapstructure:"token"`
-	Description string `mapstructure:"description"`
+	Sn          string
+	Token       string
+	Description string
 }
 
 var defaultServerValues = map[string]any{
@@ -23,67 +22,29 @@ var defaultServerValues = map[string]any{
 	"log_level": "info",
 }
 
-var serverConfigInstance *ServerConfig
-
-func GetServerConfig() *ServerConfig {
-	return serverConfigInstance
-}
-
-func SetServerConfig(cfg *ServerConfig) {
-	serverConfigInstance = cfg
-}
-
-func UnmarshalServerConfig(unmarshal func(any) error) (*ServerConfig, error) {
+// InitServerConfig 初始化服务端配置
+func InitServerConfig(provider config.IProvider) (*ServerConfig, error) {
 	cfg := &ServerConfig{}
-	if err := unmarshal(cfg); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal server config: %w", err)
-	}
-	return cfg, nil
-}
 
-// UnmarshalServerConfigFromViper 从 viper 反序列化服务端配置
-func UnmarshalServerConfigFromViper() (*ServerConfig, error) {
-	return UnmarshalServerConfig(func(rawVal any) error {
-		return viper.Unmarshal(rawVal)
-	})
+	// 简单字段从 provider 获取（DefaultProvider 兜底）
+	cfg.Port = provider.GetInt("port")
+	cfg.LogLevel = provider.GetString("log_level")
+
+	// 复杂嵌套结构通过类型断言获取 unmarshal 能力
+	if u, ok := provider.(config.IUnmarshaler); ok {
+		var clientsWrapper struct {
+			Clients []ClientDef `mapstructure:"clients"`
+		}
+		if err := u.Unmarshal(&clientsWrapper); err != nil {
+			return nil, errors.Wrap(err, "failed to unmarshal clients")
+		}
+		cfg.Clients = clientsWrapper.Clients
+	}
+
+	return cfg, nil
 }
 
 // GetDefaultValues 返回服务端默认配置值
 func GetDefaultValues() map[string]any {
 	return defaultServerValues
-}
-
-// GetRequiredKeys 返回必需的配置键
-func GetRequiredKeys() []string {
-	keys := make([]string, 0, len(defaultServerValues))
-	for k := range defaultServerValues {
-		keys = append(keys, k)
-	}
-	return keys
-}
-
-// CheckConfigNotSet 检查配置是否缺失
-func CheckConfigNotSet() error {
-	var missingConfigs []string
-	for k := range defaultServerValues {
-		if !viper.IsSet(k) {
-			missingConfigs = append(missingConfigs, k)
-		}
-	}
-	if len(missingConfigs) > 0 {
-		return &ConfigNotSetError{
-			Code: 1,
-			Msg:  "Missing configs: " + strings.Join(missingConfigs, ", "),
-		}
-	}
-	return nil
-}
-
-type ConfigNotSetError struct {
-	Code int
-	Msg  string
-}
-
-func (e *ConfigNotSetError) Error() string {
-	return e.Msg
 }

@@ -5,7 +5,7 @@ import (
 	"LEPG/internal/config"
 	"fmt"
 	"os"
-	"sync"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 )
@@ -26,47 +26,35 @@ var runCmd = &cobra.Command{
 	Short: "Run LEPG client",
 	Long:  `Run LEPG client to start input and upload loops.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		// Set flag values first (higher priority than config file)
-		config.SetFlagValues(flagServerUrl, flagPort)
-
-		if cfgFile == "" {
-			if err := config.LoadConfig(); err != nil {
-				fmt.Printf("Failed to load config: %v\n", err)
-				os.Exit(1)
-			}
-		} else {
-			if err := config.LoadConfigWithPath(cfgFile); err != nil {
-				fmt.Printf("Failed to load config from %s: %v\n", cfgFile, err)
-				os.Exit(1)
-			}
+		// 收集命令行参数
+		flagValues := make(map[string]any)
+		if flagServerUrl != "" {
+			flagValues["server"] = flagServerUrl
+		}
+		if flagPort != 0 {
+			flagValues["port"] = flagPort
 		}
 
-		// Unmarshal client config
-		cfg, err := client.UnmarshalClientConfigFromViper()
+		// 创建 providers
+		providers := config.NewProviders(flagValues, cfgFile)
+
+		// 初始化客户端配置
+		cfg, err := client.InitClientConfig(providers.Chain)
 		if err != nil {
-			fmt.Printf("Failed to unmarshal client config: %v\n", err)
-			os.Exit(1)
-		}
-		client.SetClientConfig(cfg)
-
-		if err := client.CheckConfigNotSet(); err != nil {
-			fmt.Printf("Config validation failed: %v\n", err)
+			fmt.Printf("Failed to init client config: %v\n", err)
 			os.Exit(1)
 		}
 
-		var wg sync.WaitGroup
-		wg.Go(func() {
-			if err := client.MainFunc(); err != nil {
-				fmt.Printf("Input loop error: %v\n", err)
-			}
-		})
+		fmt.Printf("Client config: %+v\n", cfg)
 
-		wg.Wait()
+		if err := client.MainFunc(cfg); err != nil {
+			fmt.Printf("Client error: %v\n", err)
+			os.Exit(1)
+		}
 	},
 }
 
 // Execute adds all child commands to the rootCmd and sets flags appropriately.
-// This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	err := rootCmd.Execute()
 	if err != nil {
@@ -79,34 +67,30 @@ var initCmd = &cobra.Command{
 	Short: "Initialize LEPG",
 	Long:  `Initialize LEPG`,
 	Run: func(cmd *cobra.Command, args []string) {
-		if cfgFile == "" {
-			if err := config.LoadConfig(); err == nil {
-				fmt.Println("Config file already exists. Please delete config.toml before initializing.")
-				os.Exit(1)
-			}
-		} else {
-			if err := config.LoadConfigWithPath(cfgFile); err == nil {
-				fmt.Printf("Config file already exists at %s. Please delete it before initializing.\n", cfgFile)
-				os.Exit(1)
-			}
+		defaults := client.GetDefaultValues()
+		filename := "config.toml"
+		if cfgFile != "" {
+			filename = cfgFile
 		}
 
-		config.InitConfig(client.GetDefaultValues())
-		if err := client.CheckConfigNotSet(); err != nil {
-			fmt.Printf("Config validation failed: %v\n", err)
+		// 检查文件是否已存在
+		if _, err := os.Stat(filename); err == nil {
+			fmt.Printf("Config file already exists at %s. Please delete it before initializing.\n", filename)
 			os.Exit(1)
 		}
-		fmt.Println("LEPG client initialized successfully.")
+
+		if err := config.InitConfigWithDefaults(filename, defaults); err != nil {
+			fmt.Printf("Failed to init config: %v\n", err)
+			os.Exit(1)
+		}
+
+		absPath, _ := filepath.Abs(filename)
+		fmt.Printf("LEPG client initialized successfully. Config file created at: %s\n", absPath)
 	},
 }
 
 func init() {
-	// Here you will define your flags and configuration settings.
-	// Cobra supports persistent flags, which, if defined here,
-	// will be global for your application.
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default is ./config.toml or ./config/config.toml)")
-
-	// Client-specific flags for run command
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default is ./config.toml)")
 	runCmd.Flags().StringVarP(&flagServerUrl, "url", "u", "", "server URL (overrides config file)")
 	runCmd.Flags().IntVarP(&flagPort, "port", "p", 0, "server port (overrides config file)")
 

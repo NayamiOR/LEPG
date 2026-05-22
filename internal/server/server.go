@@ -8,11 +8,7 @@ import (
 )
 
 // ReceiveLoop 接收循环
-func ReceiveLoop() error {
-	cfg := GetServerConfig()
-	if cfg == nil {
-		return fmt.Errorf("server config not initialized")
-	}
+func ReceiveLoop(cfg *ServerConfig) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
 		return err
