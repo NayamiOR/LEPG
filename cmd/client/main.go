@@ -41,7 +41,15 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		if err := config.CheckConfig(config.Client); err != nil {
+		// Unmarshal client config
+		cfg, err := client.UnmarshalClientConfigFromViper()
+		if err != nil {
+			fmt.Printf("Failed to unmarshal client config: %v\n", err)
+			os.Exit(1)
+		}
+		client.SetClientConfig(cfg)
+
+		if err := client.CheckConfigNotSet(); err != nil {
 			fmt.Printf("Config validation failed: %v\n", err)
 			os.Exit(1)
 		}
@@ -57,7 +65,7 @@ var runCmd = &cobra.Command{
 	},
 }
 
-// Execute adds all child commands to the root command and sets flags appropriately.
+// Execute adds all child commands to the rootCmd and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
 	err := rootCmd.Execute()
@@ -83,8 +91,8 @@ var initCmd = &cobra.Command{
 			}
 		}
 
-		config.InitConfig(config.Client)
-		if err := config.CheckConfig(config.Client); err != nil {
+		config.InitConfig(client.GetDefaultValues())
+		if err := client.CheckConfigNotSet(); err != nil {
 			fmt.Printf("Config validation failed: %v\n", err)
 			os.Exit(1)
 		}

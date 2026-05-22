@@ -1,7 +1,6 @@
 package client
 
 import (
-	"LEPG/internal/config"
 	"LEPG/internal/msg"
 	"fmt"
 	"log/slog"
@@ -30,9 +29,9 @@ func MainFunc() error {
 func TestWrite() error {
 	x := 0
 
-	cfg, err := config.GetClientConfig()
-	if err != nil {
-		return err
+	cfg := GetClientConfig()
+	if cfg == nil {
+		return fmt.Errorf("client config not initialized")
 	}
 	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
 	if err != nil {
@@ -52,9 +51,9 @@ func TestWrite() error {
 }
 
 func UploadLoop() error {
-	cfg, err := config.GetClientConfig()
-	if err != nil {
-		return fmt.Errorf("failed to get client config: %w", err)
+	cfg := GetClientConfig()
+	if cfg == nil {
+		return fmt.Errorf("client config not initialized")
 	}
 
 	// 创建消息工厂
