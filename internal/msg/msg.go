@@ -28,6 +28,8 @@ const (
 	version uint8 = 1
 )
 
+var globalIDGen = &atomicIdGenerator{}
+
 // 消息类型常量
 const (
 	MsgTypeHandshake uint8 = 0x01 // 握手消息
@@ -245,4 +247,32 @@ func DecodeFrame(conn net.Conn) (Msg, error) {
 	}
 
 	return m, nil
+}
+
+// New creates a new message with auto-generated MsgID
+func New(msgType uint8, payload []byte) Msg {
+	return Msg{
+		Magic:      MagicNumber,
+		Version:    version,
+		Type:       msgType,
+		MsgID:      globalIDGen.Next(),
+		PayloadLen: uint16(len(payload)),
+		Timestamp:  utils.NewTimestamp(),
+		Payload:    payload,
+		Checksum:   utils.CalChecksum(payload),
+	}
+}
+
+// NewWithID creates a new message with custom MsgID
+func NewWithID(flags uint8, msgID uint16, payload []byte) Msg {
+	return Msg{
+		Magic:      MagicNumber,
+		Version:    version,
+		Flags:      flags,
+		MsgID:      msgID,
+		PayloadLen: uint16(len(payload)),
+		Timestamp:  utils.NewTimestamp(),
+		Payload:    payload,
+		Checksum:   utils.CalChecksum(payload),
+	}
 }
