@@ -3,15 +3,19 @@ package server
 import (
 	"fmt"
 	"strings"
-
-	"LEPG/internal/client"
 	"github.com/spf13/viper"
 )
 
 type ServerConfig struct {
-	Port     int                `mapstructure:"port"`
-	LogLevel string             `mapstructure:"log_level"`
-	Clients  []client.ClientDef `mapstructure:"clients"`
+	Port     int         `mapstructure:"port"`
+	LogLevel string      `mapstructure:"log_level"`
+	Clients  []ClientDef `mapstructure:"clients"`
+}
+
+type ClientDef struct {
+	Sn          string `mapstructure:"sn"`
+	Token       string `mapstructure:"token"`
+	Description string `mapstructure:"description"`
 }
 
 var defaultServerValues = map[string]any{

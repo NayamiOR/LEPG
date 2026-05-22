@@ -16,11 +16,6 @@ type ClientConfig struct {
 	Token     string `mapstructure:"token"`
 }
 
-type ClientDef struct {
-	Sn          string `mapstructure:"sn"`
-	Token       string `mapstructure:"token"`
-	Description string `mapstructure:"description"`
-}
 
 var defaultClientValues = map[string]any{
 	"server":    "http://localhost",
