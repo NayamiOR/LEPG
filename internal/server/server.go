@@ -19,19 +19,11 @@ func ReceiveLoop(cfg *ServerConfig) error {
 	for {
 		conn, err := ln.Accept()
 		if err != nil {
-			return err
-		}
-		message, err := msg.DecodeFrame(conn)
-		if err != nil {
-			conn.Close()
-			return err
+			slog.Error("accept connection failed", "error", err)
+			continue
 		}
 
-		if message.Type != msg.MsgTypeHandshake {
-
-		}
-
-		slog.Info("accept a connection")
+		slog.Info("accept a connection", "remote_addr", conn.RemoteAddr().String())
 		go HandleConnection(conn)
 	}
 }
