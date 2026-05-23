@@ -1,6 +1,5 @@
-# 服务端配置
+log_level = 'info'
 port = 8883
-log_level = "info"
 
 # 客户端列表配置
 # 定义允许连接到服务器的客户端

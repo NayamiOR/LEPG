@@ -1,0 +1,7 @@
+log_level = 'info'
+max_retry = 10
+port = 8883
+retry_interval = 5000
+server = '127.0.0.1'
+sn = "CENTRAL001"
+token = "token123456"

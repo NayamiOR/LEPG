@@ -5,9 +5,11 @@ import (
 	"LEPG/internal/errors"
 )
 
+const DefaultConfigFile = "config/client"
+
 // NewProviders 创建带有客户端默认值的配置提供者
 func NewProviders(flagValues map[string]any, cfgFile string) *config.Providers {
-	return config.NewProviders(flagValues, cfgFile, defaultClientValues)
+	return config.NewProviders(flagValues, cfgFile, DefaultConfigFile, defaultClientValues)
 }
 
 type ClientConfig struct {

@@ -71,7 +71,7 @@ var initCmd = &cobra.Command{
 	Long:  `Initialize LEPG`,
 	Run: func(cmd *cobra.Command, args []string) {
 		defaults := server.GetDefaultValues()
-		filename := "config.toml"
+		filename := "config/server.toml"
 		if cfgFile != "" {
 			filename = cfgFile
 		}
@@ -93,7 +93,7 @@ var initCmd = &cobra.Command{
 }
 
 func init() {
-	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default is ./config.toml)")
+	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default is ./config/server.toml)")
 	runCmd.Flags().IntVarP(&flagPort, "port", "p", 0, "server port (overrides config file)")
 
 	rootCmd.AddCommand(initCmd)

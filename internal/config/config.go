@@ -19,8 +19,9 @@ type Providers struct {
 // NewProviders 创建配置提供者
 // flagValues: 命令行参数，优先级最高
 // cfgFile: 配置文件路径，为空时使用默认路径
+// defaultConfigName: 默认配置文件名（不含扩展名），如 "config/server"
 // extraDefaults: 额外的默认值（会覆盖内置默认值）
-func NewProviders(flagValues map[string]any, cfgFile string, extraDefaults ...map[string]any) *Providers {
+func NewProviders(flagValues map[string]any, cfgFile string, defaultConfigName string, extraDefaults ...map[string]any) *Providers {
 	// 1. Flag provider - 最高优先级
 	flagProv := provider.NewFlagProvider()
 	for k, v := range flagValues {
@@ -36,9 +37,8 @@ func NewProviders(flagValues map[string]any, cfgFile string, extraDefaults ...ma
 	if cfgFile != "" {
 		fileProv.SetConfigFile(cfgFile)
 	} else {
-		fileProv.SetConfigName("config")
+		fileProv.SetConfigName(defaultConfigName)
 		fileProv.AddConfigPath(".")
-		fileProv.AddConfigPath("./config")
 	}
 
 	// 尝试加载文件，忽略不存在错误
