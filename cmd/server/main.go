@@ -43,6 +43,13 @@ var runCmd = &cobra.Command{
 
 		fmt.Printf("Server config: %+v\n", cfg)
 
+		// 打印客户端列表
+		fmt.Printf("Loaded %d clients:\n", len(cfg.Clients))
+		for i, client := range cfg.Clients {
+			fmt.Printf("  [%d] SN: %s, Token: %s, Description: %s\n",
+				i+1, client.Sn, client.Token, client.Description)
+		}
+
 		if err := server.ReceiveLoop(cfg); err != nil {
 			fmt.Printf("Server error: %v\n", err)
 			os.Exit(1)
