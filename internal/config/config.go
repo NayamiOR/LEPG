@@ -4,13 +4,6 @@ import (
 	"LEPG/internal/config/provider"
 )
 
-// ==================== 编译期常量 ====================
-const (
-	DefaultServerHost = "http://localhost"
-	DefaultServerPort = 8883
-	DefaultLogLevel   = "info"
-)
-
 // ==================== 运行时配置变量 ====================
 var (
 	BuildVersion = "dev"
@@ -26,7 +19,8 @@ type Providers struct {
 // NewProviders 创建配置提供者
 // flagValues: 命令行参数，优先级最高
 // cfgFile: 配置文件路径，为空时使用默认路径
-func NewProviders(flagValues map[string]any, cfgFile string) *Providers {
+// extraDefaults: 额外的默认值（会覆盖内置默认值）
+func NewProviders(flagValues map[string]any, cfgFile string, extraDefaults ...map[string]any) *Providers {
 	// 1. Flag provider - 最高优先级
 	flagProv := provider.NewFlagProvider()
 	for k, v := range flagValues {
@@ -52,11 +46,14 @@ func NewProviders(flagValues map[string]any, cfgFile string) *Providers {
 	_ = fileProv.LoadDotEnv()
 
 	// 4. Default provider - 最低优先级
-	defaultProv := provider.NewDefaultProvider(map[string]any{
-		"server":    DefaultServerHost,
-		"port":      DefaultServerPort,
-		"log_level": DefaultLogLevel,
-	})
+	defaults := make(map[string]any)
+	// 合并额外的默认值（由调用方提供）
+	for _, extra := range extraDefaults {
+		for k, v := range extra {
+			defaults[k] = v
+		}
+	}
+	defaultProv := provider.NewDefaultProvider(defaults)
 
 	// 构建提供者链：Default < File < Env < Flag
 	chain := NewProviderChainWithFile(fileProv, defaultProv, fileProv, envProv, flagProv)

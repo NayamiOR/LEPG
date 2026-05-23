@@ -35,8 +35,8 @@ var runCmd = &cobra.Command{
 			flagValues["port"] = flagPort
 		}
 
-		// 创建 providers
-		providers := config.NewProviders(flagValues, cfgFile)
+		// 创建 providers（包含客户端默认值）
+		providers := client.NewProviders(flagValues, cfgFile)
 
 		// 初始化客户端配置
 		cfg, err := client.InitClientConfig(providers.Chain)

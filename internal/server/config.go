@@ -5,6 +5,11 @@ import (
 	"LEPG/internal/errors"
 )
 
+// NewProviders 创建带有服务端默认值的配置提供者
+func NewProviders(flagValues map[string]any, cfgFile string) *config.Providers {
+	return config.NewProviders(flagValues, cfgFile, defaultServerValues)
+}
+
 type ServerConfig struct {
 	Port     int
 	LogLevel string

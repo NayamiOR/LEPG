@@ -2,6 +2,7 @@ package client
 
 import (
 	"LEPG/internal/msg"
+	"errors"
 	"fmt"
 	"log/slog"
 	"net"
@@ -43,7 +44,6 @@ func TestWrite(cfg *ClientConfig) error {
 		time.Sleep(time.Nanosecond * 100)
 		x += 1
 	}
-
 }
 
 func UploadLoop(cfg *ClientConfig) error {
@@ -51,9 +51,28 @@ func UploadLoop(cfg *ClientConfig) error {
 	factory := msg.NewMsgFactory()
 
 	// 建立网络连接
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
-	if err != nil {
-		return fmt.Errorf("failed to connect to server %s:%d: %w", cfg.ServerUrl, cfg.Port, err)
+
+
+	var conn net.Conn
+	var err error
+	fmt.Println("Trying to connect to server with max retry:", cfg.MaxRetry)
+	for retryCount:= 0; retryCount < cfg.MaxRetry+1; retryCount++ {
+		if conn != nil {
+			break
+		}
+		conn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
+
+		if err != nil {
+			if _, ok := errors.AsType[*net.OpError](err); ok {
+				if retryCount == cfg.MaxRetry {
+					return fmt.Errorf("failed to connect to server %s:%d after %d retries: %w", cfg.ServerUrl, cfg.Port, retryCount, err)
+				}
+				slog.Warn("failed to connect to server, retrying...", "error", err)
+				time.Sleep(time.Millisecond * time.Duration(cfg.RetryInterval))
+			} else {
+				return fmt.Errorf("failed to connect to server %s:%d: Unknown error: %w", cfg.ServerUrl, cfg.Port, err)
+			}
+		}
 	}
 	defer conn.Close()
 
