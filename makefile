@@ -30,6 +30,10 @@ run-client:
 run-server:
 	go run $(call FixPath, ./cmd/server/main.go) run
 
+c: run-client
+
+s: run-server
+
 clean:
 	$(RM) $(call FixPath,$(BIN_DIR)/*)
 
