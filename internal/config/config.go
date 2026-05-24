@@ -55,8 +55,8 @@ func NewProviders(flagValues map[string]any, cfgFile string, defaultConfigName s
 	}
 	defaultProv := provider.NewDefaultProvider(defaults)
 
-	// 构建提供者链：Default < File < Env < Flag
-	chain := NewProviderChainWithFile(fileProv, defaultProv, fileProv, envProv, flagProv)
+	// 构建提供者链：Default < Env < File < Flag
+	chain := NewProviderChainWithFile(fileProv, defaultProv, envProv, fileProv, flagProv)
 
 	return &Providers{
 		Chain: chain,

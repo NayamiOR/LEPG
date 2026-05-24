@@ -25,7 +25,7 @@ type IUnmarshaler interface {
 }
 
 // ProviderChain 多提供者链，按优先级顺序查找
-// 优先级：传入顺序 Default < File < Env < Flag（Flag 最高）
+// 优先级：传入顺序 Default < Env < File < Flag（Flag 最高）
 type ProviderChain struct {
 	providers []IProvider
 	fileProvider *provider.FileProvider
