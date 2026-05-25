@@ -17,9 +17,39 @@ func MainFunc(cfg *ClientConfig) error {
 		// 	slog.Error("TestWrite failed", "err", err)
 		// }
 	})
+	// wg.Go(func() {
+	// 	if err := UploadLoop(cfg); err != nil {
+	// 		slog.Error("UploadLoop failed", "err", err)
+	// 	}
+	// })
+	// wg.Go(func() {
+	// 	if err := ModbusPollingExample(); err != nil {
+	// 		slog.Error("ModbusPollingExample failed", "err", err)
+	// 	}
+	// })
+
+	device := &DeviceConfig{
+		Name:         "test-device",
+		Type:         ConnectionTypeTCP,
+		Timeout:      5 * time.Second,
+		SlaveID:      1,
+		PollInterval: 1 * time.Second,
+		TCP: &TcpSlaveConfig{
+			Host: "127.0.0.1",
+			Port: 5020,
+		},
+		Points: []*PointConfig{
+			{
+				Name:         "temperature",
+				FunctionCode: 3,
+				Address:      0,
+				Quantity:     1,
+			},
+		},
+	}
 	wg.Go(func() {
-		if err := UploadLoop(cfg); err != nil {
-			slog.Error("UploadLoop failed", "err", err)
+		if err := TcpDevicePolling(device); err != nil {
+			slog.Error("ModbusRTUExample failed", "err", err)
 		}
 	})
 
@@ -52,11 +82,10 @@ func UploadLoop(cfg *ClientConfig) error {
 
 	// 建立网络连接
 
-
 	var conn net.Conn
 	var err error
 	fmt.Println("Trying to connect to server with max retry:", cfg.MaxRetry)
-	for retryCount:= 0; retryCount < cfg.MaxRetry+1; retryCount++ {
+	for retryCount := 0; retryCount < cfg.MaxRetry+1; retryCount++ {
 		if conn != nil {
 			break
 		}

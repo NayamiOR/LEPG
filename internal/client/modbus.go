@@ -1,6 +1,12 @@
 package client
 
-import "time"
+import (
+	"fmt"
+	"log/slog"
+	"time"
+
+	"github.com/goburrow/modbus"
+)
 
 // AccessType defines the access permissions for a data point
 type AccessType string
@@ -15,11 +21,11 @@ const (
 type DataType string
 
 const (
-	DataTypeBool   DataType = "bool"   // Boolean (coil/discrete input)
-	DataTypeInt16  DataType = "int16"  // 16-bit signed integer
-	DataTypeUint16 DataType = "uint16" // 16-bit unsigned integer
-	DataTypeInt32  DataType = "int32"  // 32-bit signed integer (2 registers)
-	DataTypeUint32 DataType = "uint32" // 32-bit unsigned integer (2 registers)
+	DataTypeBool    DataType = "bool"    // Boolean (coil/discrete input)
+	DataTypeInt16   DataType = "int16"   // 16-bit signed integer
+	DataTypeUint16  DataType = "uint16"  // 16-bit unsigned integer
+	DataTypeInt32   DataType = "int32"   // 32-bit signed integer (2 registers)
+	DataTypeUint32  DataType = "uint32"  // 32-bit unsigned integer (2 registers)
 	DataTypeFloat32 DataType = "float32" // 32-bit float (2 registers, IEEE 754)
 )
 
@@ -31,158 +37,175 @@ const (
 	ConnectionTypeTCP ConnectionType = "tcp" // Modbus TCP
 )
 
-// RtuSlaveConfig contains RTU-specific connection parameters
-type RtuSlaveConfig struct {
-	Port     string `toml:"port"`     // Serial port (e.g., "/dev/ttyS0" or "COM3")
-	BaudRate int    `toml:"baud_rate"` // Baud rate (e.g., 9600, 19200)
-	DataBits int    `toml:"data_bits"` // Data bits (default 8)
-	Parity   string `toml:"parity"`   // Parity: "N", "E", "O" (default "N")
-	StopBits int    `toml:"stop_bits"` // Stop bits (default 1)
-}
+// ModbusRTUExample demonstrates Modbus RTU connection and polling
+// This example uses hardcoded parameters for testing
+func ModbusRTUExample() error {
+	// Hardcoded RTU parameters for testing
+	// Windows: "COM3", Linux: "/dev/ttyUSB0"
+	handler := modbus.NewRTUClientHandler("/dev/ttyUSB0")
+	handler.BaudRate = 9600
+	handler.DataBits = 8
+	handler.Parity = "N"
+	handler.StopBits = 1
+	// handler.SlaveId = 0
+	handler.Timeout = 5 * time.Second
 
-// TcpSlaveConfig contains TCP-specific connection parameters
-type TcpSlaveConfig struct {
-	Host string `toml:"host"` // IP address or hostname
-	Port int    `toml:"port"` // Port number (default 502)
-}
+	// Create Modbus client
+	client := modbus.NewClient(handler)
 
-// PointConfig defines a single data point on a Modbus device
-type PointConfig struct {
-	Name          string     `toml:"name"`           // Point identifier (JSON field name)
-	FunctionCode  int        `toml:"function_code"` // Modbus function code (1/2/3/4/5/6/16)
-	Address       int        `toml:"address"`        // Register starting address (decimal)
-	Quantity      int        `toml:"quantity"`       // Number of registers
-	DataType      DataType   `toml:"data_type"`      // Data type for parsing
-	Scale         float64    `toml:"scale"`          // Scaling factor (default 1.0)
-	Unit          string     `toml:"unit"`           // Engineering unit (e.g., "°C", "%", "V")
-	Access        AccessType `toml:"access"`         // Access permission: "ro", "rw", "wo" (default "ro")
-	CacheEnabled  bool       `toml:"cache_enabled"`  // Enable local caching for resume (default true)
-}
-
-// DeviceConfig defines a Modbus device configuration
-type DeviceConfig struct {
-	Name             string           `toml:"name"`              // Device unique identifier
-	Type             ConnectionType   `toml:"type"`              // Connection type: "rtu" or "tcp"
-	PollInterval     time.Duration    `toml:"poll_interval"`     // Polling interval (e.g., "10s")
-	Timeout          time.Duration    `toml:"timeout"`           // Request timeout (default "5s")
-	OfflineThreshold time.Duration    `toml:"offline_threshold"` // Offline detection threshold (default "30s")
-	EnableMonitor    bool             `toml:"enable_monitor"`    // Enable health monitoring (default true)
-
-	// RTU-specific (only when type = "rtu")
-	RTU *RtuSlaveConfig `toml:"rtu,omitempty"`
-
-	// TCP-specific (only when type = "tcp")
-	TCP *TcpSlaveConfig `toml:"tcp,omitempty"`
-
-	// Common addressing
-	SlaveID int `toml:"slave_id"` // Modbus slave address (required for RTU, usually 1 for TCP)
-
-	// Data points
-	Points []*PointConfig `toml:"points"` // List of data points to read/write
-}
-
-// Validate checks if the device configuration is valid
-func (d *DeviceConfig) Validate() error {
-	if d.Name == "" {
-		return &ValidationError{Field: "name", Message: "device name cannot be empty"}
+	// Connect to serial port
+	err := handler.Connect()
+	if err != nil {
+		return err
 	}
+	defer handler.Close()
 
-	if d.Type != ConnectionTypeRTU && d.Type != ConnectionTypeTCP {
-		return &ValidationError{Field: "type", Message: "must be 'rtu' or 'tcp'"}
-	}
+	slog.Info("Modbus RTU connected",
+		"port", "/dev/ttyUSB0",
+		"baud_rate", 9600,
+		"slave_id", handler.SlaveId)
 
-	if d.Type == ConnectionTypeRTU && d.RTU == nil {
-		return &ValidationError{Field: "rtu", Message: "RTU config required when type=rtu"}
-	}
+	// Polling loop
+	pollInterval := 5 * time.Second
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
 
-	if d.Type == ConnectionTypeTCP && d.TCP == nil {
-		return &ValidationError{Field: "tcp", Message: "TCP config required when type=tcp"}
-	}
-
-	if d.SlaveID <= 0 || d.SlaveID > 247 {
-		return &ValidationError{Field: "slave_id", Message: "must be between 1 and 247"}
-	}
-
-	if len(d.Points) == 0 {
-		return &ValidationError{Field: "points", Message: "at least one point required"}
-	}
-
-	// Validate each point
-	for i, point := range d.Points {
-		if err := point.Validate(); err != nil {
-			return &ValidationError{Field: "points[" + string(rune('0'+i)) + "]", Message: err.Error()}
+	for range ticker.C {
+		// Read holding registers (function code 3)
+		// Reading 10 registers starting from address 0
+		// results, err := client.ReadHoldingRegisters(0, 10)
+		results, err := client.ReadInputRegisters(0, 10)
+		if err != nil {
+			slog.Error("Failed to read holding registers", "error", err)
+			continue
 		}
+
+		// Log results
+		slog.Info("Modbus RTU polling success",
+			"address", 0,
+			"quantity", 10,
+			"values", results)
+	}
+	return nil
+}
+
+// ModbusTCPExample demonstrates Modbus TCP connection and polling
+// This example uses hardcoded parameters for testing
+func ModbusTCPExample() error {
+	// Hardcoded TCP parameters for testing
+	// Note: Using port 5020 to match built-in simulator (scripts/modbus_simulator.py)
+	// Change to 502 for standard Modbus devices
+	handler := modbus.NewTCPClientHandler("127.0.0.1:5020")
+	handler.SlaveId = 1 // 匹配模拟器的 slave_id
+	handler.Timeout = 5 * time.Second
+
+	// Create Modbus client
+	client := modbus.NewClient(handler)
+
+	// Connect to TCP server
+	err := handler.Connect()
+	if err != nil {
+		return err
+	}
+	defer handler.Close()
+
+	slog.Info("Modbus TCP connected",
+		"address", "127.0.0.1:5020",
+		"slave_id", handler.SlaveId)
+
+	// Polling loop
+	pollInterval := 1 * time.Second
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+
+	for range ticker.C {
+		// Read holding registers (function code 3)
+		// Reading 2 registers starting from address 0
+		// Simulator: HR[0]=250(temp), HR[1]=650(humidity)
+		results, err := client.ReadHoldingRegisters(0, 2)
+		if err != nil {
+			slog.Error("Failed to read holding registers", "error", err)
+			continue
+		}
+
+		// Log results
+		slog.Info("Modbus TCP polling success",
+			"address", 0,
+			"quantity", 2,
+			"values", results)
 	}
 
 	return nil
 }
 
-// Validate checks if the point configuration is valid
-func (p *PointConfig) Validate() error {
-	if p.Name == "" {
-		return &ValidationError{Field: "name", Message: "point name cannot be empty"}
-	}
+func TcpDevicePolling(dvc *DeviceConfig) error {
+	slog.Info("Modbus TCP polling started", "device", dvc.Name)
+	link := fmt.Sprintf("%s:%d", dvc.TCP.Host, dvc.TCP.Port)
+	handler := modbus.NewTCPClientHandler(link)
+	handler.SlaveId = dvc.SlaveID
+	handler.Timeout = dvc.Timeout * time.Millisecond
 
-	// Validate function code
-	validFunctionCodes := map[int]bool{
-		1:  true, // Read Coils
-		2:  true, // Read Discrete Inputs
-		3:  true, // Read Holding Registers
-		4:  true, // Read Input Registers
-		5:  true, // Write Single Coil
-		6:  true, // Write Single Register
-		16: true, // Write Multiple Registers
-	}
+	// Create Modbus client
+	client := modbus.NewClient(handler)
 
-	if !validFunctionCodes[p.FunctionCode] {
-		return &ValidationError{
-			Field:   "function_code",
-			Message: "must be 1, 2, 3, 4, 5, 6, or 16",
+	// Connect to TCP server
+	err := handler.Connect()
+	if err != nil {
+		return err
+	}
+	defer handler.Close()
+
+	slog.Info("Modbus TCP connected",
+		"address", link,
+		"slave_id", handler.SlaveId)
+
+	pollInterval := dvc.PollInterval
+
+	ticker := time.NewTicker(pollInterval)
+	defer ticker.Stop()
+	for range ticker.C {
+		for _, point := range dvc.Points {
+			slog.Info("Polling point", "point", point.Name, "function_code", point.FunctionCode)
+			var results []byte
+			var err error
+			switch point.FunctionCode {
+			case 1: // Read Coils
+				results, err = client.ReadCoils(point.Address, point.Quantity)
+			case 2: // Read Discrete Inputs
+				results, err = client.ReadDiscreteInputs(point.Address, point.Quantity)
+			case 3: // Read Holding Registers
+				results, err = client.ReadHoldingRegisters(point.Address, point.Quantity)
+			case 4: // Read Input Registers
+				results, err = client.ReadInputRegisters(point.Address, point.Quantity)
+			default:
+				slog.Error("Unsupported function code", "point", point.Name, "function_code", point.FunctionCode)
+				continue
+
+			}
+			if err != nil {
+				slog.Error("Failed to read holding registers", "error", err)
+				continue
+			}
+
+			slog.Info("Modbus TCP point polling success",
+				"point", point.Name,
+				"values", results)
 		}
 	}
-
-	// Validate access vs function code compatibility
-	if p.Access == AccessReadOnly && (p.FunctionCode == 5 || p.FunctionCode == 6 || p.FunctionCode == 16) {
-		return &ValidationError{
-			Field:   "access",
-			Message: "read-only access incompatible with write function codes",
-		}
-	}
-
-	// Validate data type
-	validDataTypes := map[DataType]bool{
-		DataTypeBool:    true,
-		DataTypeInt16:   true,
-		DataTypeUint16:  true,
-		DataTypeInt32:   true,
-		DataTypeUint32:  true,
-		DataTypeFloat32: true,
-	}
-
-	if !validDataTypes[p.DataType] {
-		return &ValidationError{
-			Field:   "data_type",
-			Message: "must be bool, int16, uint16, int32, uint32, or float32",
-		}
-	}
-
-	// Validate register count for multi-register types
-	if p.Quantity <= 0 {
-		return &ValidationError{
-			Field:   "quantity",
-			Message: "must be greater than 0",
-		}
-	}
+	slog.Info("For died")
 
 	return nil
 }
 
-// ValidationError represents a configuration validation error
-type ValidationError struct {
-	Field   string
-	Message string
-}
+// ModbusPollingExample starts the Modbus polling loop
+// By default uses TCP for easier testing (can be switched to RTU)
+func ModbusPollingExample() error {
+	// For testing, we use TCP by default
+	// To test RTU, comment out TCP and uncomment RTU below
 
-func (e *ValidationError) Error() string {
-	return e.Field + ": " + e.Message
+	// TCP example (default - easier to test with simulators)
+	return ModbusTCPExample()
+
+	// RTU example (requires serial hardware or virtual port)
+	// return ModbusRTUExample()
 }
