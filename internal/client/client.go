@@ -12,21 +12,6 @@ import (
 
 func MainFunc(cfg *ClientConfig) error {
 	wg := &sync.WaitGroup{}
-	wg.Go(func() {
-		// if err := TestWrite(cfg); err != nil {
-		// 	slog.Error("TestWrite failed", "err", err)
-		// }
-	})
-	// wg.Go(func() {
-	// 	if err := UploadLoop(cfg); err != nil {
-	// 		slog.Error("UploadLoop failed", "err", err)
-	// 	}
-	// })
-	// wg.Go(func() {
-	// 	if err := ModbusPollingExample(); err != nil {
-	// 		slog.Error("ModbusPollingExample failed", "err", err)
-	// 	}
-	// })
 
 	// 启动所有配置的 Modbus 设备轮询
 	if len(cfg.Devices) == 0 {
@@ -49,26 +34,8 @@ func MainFunc(cfg *ClientConfig) error {
 	return nil
 }
 
-func TestWrite(cfg *ClientConfig) error {
-	x := 0
-
-	conn, err := net.Dial("tcp", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
-	if err != nil {
-		return err
-	}
-
-	for {
-		fmt.Println(x)
-		_, err := fmt.Fprintf(conn, "hello %d", x)
-		if err != nil {
-			return err
-		}
-		time.Sleep(time.Nanosecond * 100)
-		x += 1
-	}
-}
-
-func UploadLoop(cfg *ClientConfig) error {
+// 测试和后端的连接以及装包解包
+func UploadLoopExample(cfg *ClientConfig) error {
 	// 创建消息工厂
 	factory := msg.NewMsgFactory()
 
