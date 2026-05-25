@@ -28,30 +28,22 @@ func MainFunc(cfg *ClientConfig) error {
 	// 	}
 	// })
 
-	device := &DeviceConfig{
-		Name:         "test-device",
-		Type:         ConnectionTypeTCP,
-		Timeout:      5 * time.Second,
-		SlaveID:      1,
-		PollInterval: 1 * time.Second,
-		TCP: &TcpSlaveConfig{
-			Host: "127.0.0.1",
-			Port: 5020,
-		},
-		Points: []*PointConfig{
-			{
-				Name:         "temperature",
-				FunctionCode: 3,
-				Address:      0,
-				Quantity:     1,
-			},
-		},
-	}
-	wg.Go(func() {
-		if err := TcpDevicePolling(device); err != nil {
-			slog.Error("ModbusRTUExample failed", "err", err)
+	// 启动所有配置的 Modbus 设备轮询
+	if len(cfg.Devices) == 0 {
+		slog.Warn("No devices configured, client will run without Modbus polling")
+	} else {
+		for _, device := range cfg.Devices {
+			slog.Info("Starting device polling", "device", device.Name, "type", device.Type)
+
+			// 为每个设备启动独立的 goroutine
+			device := device // 创建局部变量避免闭包问题
+			wg.Go(func() {
+				if err := TcpDevicePolling(device); err != nil {
+					slog.Error("Device polling failed", "device", device.Name, "error", err)
+				}
+			})
 		}
-	})
+	}
 
 	wg.Wait()
 	return nil
