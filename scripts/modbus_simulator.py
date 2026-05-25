@@ -19,8 +19,8 @@ def create_temp_sensor():
       HR[1]: 湿度 650 → 65.0% (scale=0.1)
       IR[0-9]: 输入寄存器测试数据 [100, 110, 120, ...]
     """
-    hr_block = ModbusSequentialDataBlock(0, [250, 650] + [0] * 98)
-    ir_block = ModbusSequentialDataBlock(0, [100, 110, 120, 130, 140, 150, 160, 170, 180, 190] + [0] * 90)
+    hr_block = ModbusSequentialDataBlock(1, [250, 650] + [0] * 98)
+    ir_block = ModbusSequentialDataBlock(1, [100, 110, 120, 130, 140, 150, 160, 170, 180, 190] + [0] * 90)
 
     return ModbusSlaveContext(hr=hr_block, ir=ir_block)
 
@@ -36,17 +36,17 @@ def create_power_meter():
     block = ModbusSequentialDataBlock(0, [0] * 200)
 
     # 电压
-    block.setValues(100, [2200])
+    block.setValues(101, [2200])
 
     # 电流 10.00A → float32 bytes → uint16 words
     current_float = struct.pack('>f', 10.0)
     current_words = [struct.unpack('>H', current_float[i:i+2])[0] for i in range(0, 4, 2)]
-    block.setValues(102, current_words)
+    block.setValues(103, current_words)
 
     # 功率 2.2kW
     power_float = struct.pack('>f', 2.2)
     power_words = [struct.unpack('>H', power_float[i:i+2])[0] for i in range(0, 4, 2)]
-    block.setValues(104, power_words)
+    block.setValues(105, power_words)
 
     return ModbusSlaveContext(hr=block)
 

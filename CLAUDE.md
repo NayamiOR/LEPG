@@ -63,8 +63,8 @@ go run cmd/server/main.go run -c /path/to/config.toml
 The configuration system uses a **Provider Chain pattern** with dependency injection, avoiding global singleton state. Configuration sources are prioritized from low to high:
 
 1. **DefaultProvider** (0): Hardcoded defaults at compile time
-2. **FileProvider** (1): TOML configuration files (`config/client.toml`, `config/server.toml`)
-3. **EnvProvider** (2): Environment variables with `LEPG_` prefix
+2. **EnvProvider** (1): Environment variables with `LEPG_` prefix
+3. **FileProvider** (2): TOML configuration files (`config/client.toml`, `config/server.toml`)
 4. **FlagProvider** (3): Command-line arguments (highest priority)
 
 Key interfaces:
@@ -107,6 +107,34 @@ Key components:
 - `HandleConnection()`: Per-connection message processing
 - Client authentication via SN/token pairs from config
 - Concurrent connection handling with goroutines
+
+### Modbus Integration
+
+**Important - Address Mapping Between Go and Python:**
+
+When working with Modbus registers, be aware of the addressing difference between Go modbus libraries and Python's pymodbus:
+
+- **Go modbus libraries** use **PDU addresses** (0-based addressing within the device)
+- **Python pymodbus** uses **register addresses** (1-based addressing)
+
+**Address conversion formula:**
+```
+Python Address = Go Address + 1
+Go Address = Python Address - 1
+```
+
+**Example:**
+- To read holding register at Go address 0 → use address 1 in pymodbus
+- To read holding register at Python address 1 → use address 0 in Go
+
+This difference stems from:
+- Go modbus implementations typically use PDU (Protocol Data Unit) addressing
+- pymodbus uses the more user-friendly register addressing that matches device documentation
+
+**Key files:**
+- `internal/client/modbus.go`: Modbus slave definitions and data structures
+- `scripts/modbus_simulator.py`: Python Modbus simulator (uses register addressing)
+- `scripts/test_read.go`: Go test utility (uses PDU addressing)
 
 ## Project Structure
 

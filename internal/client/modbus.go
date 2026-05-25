@@ -1,8 +1,10 @@
 package client
 
 import (
+	"encoding/binary"
 	"fmt"
 	"log/slog"
+	"math"
 	"time"
 
 	"github.com/goburrow/modbus"
@@ -196,7 +198,7 @@ func TcpDevicePolling(dvc *DeviceConfig) error {
 	defer ticker.Stop()
 	for range ticker.C {
 		for _, point := range dvc.Points {
-			slog.Info("Polling point", "point", point.Name, "function_code", point.FunctionCode)
+			// slog.Info("Polling point", "point", point.Name, "function_code", point.FunctionCode)
 			var results []byte
 			var err error
 			switch point.FunctionCode {
@@ -211,16 +213,67 @@ func TcpDevicePolling(dvc *DeviceConfig) error {
 			default:
 				slog.Error("Unsupported function code", "point", point.Name, "function_code", point.FunctionCode)
 				continue
-
 			}
 			if err != nil {
 				slog.Error("Failed to read holding registers", "error", err)
 				continue
 			}
 
-			slog.Info("Modbus TCP point polling success",
-				"point", point.Name,
-				"values", results)
+			var floatVal float64
+			var boolVal bool
+			originalResults := make([]byte, len(results))
+			copy(originalResults, results) // 保存原始结果以供调试
+
+			// TODO: 检查纠正解析逻辑
+			switch point.DataType {
+			case DataTypeBool:
+				boolVal = results[0] != 0
+			case DataTypeInt16:
+				floatVal = float64(int16(results[0])<<8 | int16(results[1]))
+			case DataTypeUint16:
+				floatVal = float64(uint16(results[0])<<8 | uint16(results[1]))
+			case DataTypeInt32:
+				floatVal = float64(int32(results[0])<<24 | int32(results[1])<<16 | int32(results[2])<<8 | int32(results[3]))
+			case DataTypeUint32:
+				floatVal = float64(uint32(results[0])<<24 | uint32(results[1])<<16 | uint32(results[2])<<8 | uint32(results[3]))
+			case DataTypeFloat32:
+				// Convert 4 bytes to IEEE 754 float32
+				if len(results) < 4 {
+					slog.Error("Insufficient data for float32", "point", point.Name, "length", len(results))
+					continue
+				}
+				// Debug: log raw data
+				slog.Debug("Float32 raw data", "point", point.Name, "results", results, "len", len(results))
+
+				// Apply byte order conversion
+				converted := ByteOrderConversion(results[:4], point.ByteOrder)
+				slog.Debug("Float32 converted", "point", point.Name, "converted", converted, "byte_order", point.ByteOrder)
+
+				// Convert bytes to uint32 then to float32 using IEEE 754
+				bits := binary.BigEndian.Uint32(converted)
+				floatVal = float64(math.Float32frombits(bits))
+				slog.Debug("Float32 final value", "point", point.Name, "bits", bits, "value", floatVal)
+			}
+
+			// Apply scale and offset for numeric types only
+			if point.DataType != DataTypeBool {
+				floatVal = floatVal*point.Scale + point.Offset
+			}
+
+			// Log based on data type
+			if point.DataType == DataTypeBool {
+				slog.Info("Modbus TCP point polling success",
+					"point", point.Name,
+					"type", point.DataType,
+					"value", boolVal)
+			} else {
+				slog.Info("Modbus TCP point polling success",
+					"point", point.Name,
+					"type", point.DataType,
+					"unit", point.Unit,
+					"origin", originalResults,
+					"value", floatVal)
+			}
 		}
 	}
 	slog.Info("For died")

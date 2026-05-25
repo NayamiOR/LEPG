@@ -7,9 +7,9 @@ sn = "CENTRAL001"
 token = "token123456"
 
 # Modbus 设备配置
-# 支持 TCP 和 RTU 两种连接类型
+# 端口和寄存器地址与 scripts/modbus_simulator.py 严格匹配
 
-# TCP 设备示例
+# 温湿度传感器 - TCP 5020
 [[devices]]
 name = "sensor-1"
 type = "tcp"
@@ -17,83 +17,90 @@ timeout = "5s"
 offline_threshold = "30s"
 enable_monitor = true
 slave_id = 1
-poll_interval = "10s"
+poll_interval = "1s"
 
-  [devices.tcp]
-  host = "127.0.0.1"
-  port = 5020
+[devices.tcp]
+host = "127.0.0.1"
+port = 5020  # 对应模拟器的温湿度传感器
 
-  [[devices.points]]
-  name = "temperature"
-  function_code = 3
-  address = 0
-  quantity = 1
-  data_type = "int16"
-  byte_order = "abcd"  # 单寄存器类型忽略此字段
-  scale = 0.1
-  offset = 0
-  unit = "°C"
-  access = "ro"
-  cache_enabled = true
+# HR[0]: 温度 250 → 25.0°C (scale=0.1)
+[[devices.points]]
+name = "temperature"
+function_code = 3  # Read Holding Registers
+address = 0
+quantity = 1
+data_type = "int16"
+byte_order = "abcd"
+scale = 0.1
+offset = 0
+unit = "°C"
+access = "ro"
+cache_enabled = true
 
-  [[devices.points]]
-  name = "humidity"
-  function_code = 3
-  address = 1
-  quantity = 1
-  data_type = "uint16"
-  byte_order = "abcd"  # 单寄存器类型忽略此字段
-  scale = 0.1
-  offset = 0
-  unit = "%"
-  access = "ro"
-  cache_enabled = true
+# HR[1]: 湿度 650 → 65.0% (scale=0.1)
+[[devices.points]]
+name = "humidity"
+function_code = 3
+address = 1
+quantity = 1
+data_type = "uint16"
+byte_order = "abcd"
+scale = 0.1
+offset = 0
+unit = "%"
+access = "ro"
+cache_enabled = true
 
-# 第二个 TCP 设备示例（智能电表）
+# 智能电表 - TCP 5021
 [[devices]]
 name = "power-meter"
 type = "tcp"
 timeout = "5s"
 slave_id = 1
-poll_interval = "5s"
+poll_interval = "1s"
 
-  [devices.tcp]
-  host = "127.0.0.1"
-  port = 5021
+[devices.tcp]
+host = "127.0.0.1"
+port = 5021  # 对应模拟器的智能电表
 
-  # 单寄存器示例
-  [[devices.points]]
-  name = "voltage"
-  function_code = 3
-  address = 100
-  quantity = 1
-  data_type = "uint16"
-  byte_order = "abcd"  # 单寄存器类型忽略此字段
-  scale = 0.1
-  offset = 0
-  unit = "V"
-  access = "ro"
+# HR[100]: 电压 2200 → 220.0V (scale=0.1)
+[[devices.points]]
+name = "voltage"
+function_code = 3
+address = 100
+quantity = 1
+data_type = "uint16"
+byte_order = "abcd"
+scale = 0.1
+offset = 0
+unit = "V"
+access = "ro"
 
-  # 多寄存器示例（不同字节序）
-  [[devices.points]]
-  name = "current"
-  function_code = 3
-  address = 102
-  quantity = 2
-  data_type = "float32"
-  byte_order = "abcd"  # Big-Endian (ABCD) - 标准 Modbus 字节序
-  unit = "A"
-  access = "ro"
+# HR[102-103]: 电流 10.00A (float32, IEEE 754 big-endian)
+[[devices.points]]
+name = "current"
+function_code = 3
+address = 102
+quantity = 2
+data_type = "float32"
+byte_order = "abcd"  # IEEE 754 big-endian
+scale = 1.0
+offset = 0
+unit = "A"
+access = "ro"
 
-  [[devices.points]]
-  name = "power"
-  function_code = 3
-  address = 104
-  quantity = 2
-  data_type = "float32"
-  byte_order = "dcba"  # Little-Endian (DCBA) - 逆序字节序
-  unit = "kW"
-  access = "ro"
+# HR[104-105]: 功率 2.2kW (float32, IEEE 754 big-endian)
+[[devices.points]]
+name = "power"
+function_code = 3
+address = 104
+quantity = 2
+data_type = "float32"
+byte_order = "abcd"  # IEEE 754 big-endian
+scale = 1.0
+offset = 0
+unit = "kW"
+access = "ro"
 
 # RTU 设备示例（需要串口设备，可选）
 # [[devices]]
