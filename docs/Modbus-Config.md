@@ -56,41 +56,41 @@ cache_enabled = true
 
 ### 基础参数
 
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `name` | string | ✓ | - | 设备唯一标识名，用于日志和数据输出的 device 字段 |
-| `type` | string | ✓ | - | 连接类型：`"rtu"` 或 `"tcp"` |
-| `poll_interval` | duration | ✓ | - | 轮询间隔，支持 `s`/`m` 后缀（如 `"10s"`, `"1m"`） |
-| `timeout` | duration | ✓ | `"5s"` | 单次 Modbus 请求超时时间 |
-| `slave_id` | int | ✓ | - | Modbus 从机地址（1-247） |
+| 字段            | 类型     | 必填 | 默认值 | 说明                                              |
+| --------------- | -------- | ---- | ------ | ------------------------------------------------- |
+| `name`          | string   | ✓    | -      | 设备唯一标识名，用于日志和数据输出的 device 字段  |
+| `type`          | string   | ✓    | -      | 连接类型：`"rtu"` 或 `"tcp"`                      |
+| `poll_interval` | duration | ✓    | -      | 轮询间隔，支持 `s`/`m` 后缀（如 `"10s"`, `"1m"`） |
+| `timeout`       | duration | ✓    | `"5s"` | 单次 Modbus 请求超时时间                          |
+| `slave_id`      | int      | ✓    | -      | Modbus 从机地址（1-247）                          |
 
 ### 健康监控参数
 
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `offline_threshold` | duration | ✗ | `"30s"` | 连续失败多久判定设备离线 |
-| `enable_monitor` | bool | ✗ | `true` | 是否启用健康监控和告警 |
+| 字段                | 类型     | 必填 | 默认值  | 说明                     |
+| ------------------- | -------- | ---- | ------- | ------------------------ |
+| `offline_threshold` | duration | ✗    | `"30s"` | 连续失败多久判定设备离线 |
+| `enable_monitor`    | bool     | ✗    | `true`  | 是否启用健康监控和告警   |
 
 ### RTU 专属参数
 
 当 `type = "rtu"` 时必须配置 `[devices.rtu]` 块：
 
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `port` | string | ✓ | - | 串口号<br>Linux: `/dev/ttyS0`, `/dev/ttyUSB0`<br>Windows: `COM3`, `COM4` |
-| `baud_rate` | int | ✓ | - | 波特率（常用：9600, 19200, 38400） |
-| `data_bits` | int | ✗ | `8` | 数据位（通常为 8） |
-| `parity` | string | ✗ | `"N"` | 校验位：<br>`"N"`: 无校验<br>`"E"`: 偶校验<br>`"O"`: 奇校验 |
-| `stop_bits` | int | ✗ | `1` | 停止位（通常为 1） |
+| 字段        | 类型   | 必填 | 默认值 | 说明                                                                     |
+| ----------- | ------ | ---- | ------ | ------------------------------------------------------------------------ |
+| `port`      | string | ✓    | -      | 串口号<br>Linux: `/dev/ttyS0`, `/dev/ttyUSB0`<br>Windows: `COM3`, `COM4` |
+| `baud_rate` | int    | ✓    | -      | 波特率（常用：9600, 19200, 38400）                                       |
+| `data_bits` | int    | ✗    | `8`    | 数据位（通常为 8）                                                       |
+| `parity`    | string | ✗    | `"N"`  | 校验位：<br>`"N"`: 无校验<br>`"E"`: 偶校验<br>`"O"`: 奇校验              |
+| `stop_bits` | int    | ✗    | `1`    | 停止位（通常为 1）                                                       |
 
 ### TCP 专属参数
 
 当 `type = "tcp"` 时必须配置 `[devices.tcp]` 块：
 
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `host` | string | ✓ | - | IP 地址或主机名 |
-| `port` | int | ✗ | `502` | Modbus TCP 端口（默认 502） |
+| 字段   | 类型   | 必填 | 默认值 | 说明                        |
+| ------ | ------ | ---- | ------ | --------------------------- |
+| `host` | string | ✓    | -      | IP 地址或主机名             |
+| `port` | int    | ✗    | `502`  | Modbus TCP 端口（默认 502） |
 
 ## 数据点级别配置
 
@@ -98,45 +98,45 @@ cache_enabled = true
 
 ### 基础参数
 
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `name` | string | ✓ | - | 数据点名称，作为输出 JSON 的字段名 |
-| `function_code` | int | ✓ | - | Modbus 功能码（见下表） |
-| `address` | int | ✓ | - | 寄存器起始地址（十进制） |
-| `quantity` | int | ✓ | - | 寄存器数量（见下文数据类型说明） |
-| `data_type` | string | ✓ | - | 数据类型：`bool`/`int16`/`uint16`/`int32`/`uint32`/`float32` |
+| 字段            | 类型   | 必填 | 默认值 | 说明                                                         |
+| --------------- | ------ | ---- | ------ | ------------------------------------------------------------ |
+| `name`          | string | ✓    | -      | 数据点名称，作为输出 JSON 的字段名                           |
+| `function_code` | int    | ✓    | -      | Modbus 功能码（见下表）                                      |
+| `address`       | int    | ✓    | -      | 寄存器起始地址（十进制）                                     |
+| `quantity`      | int    | ✓    | -      | 寄存器数量（见下文数据类型说明）                             |
+| `data_type`     | string | ✓    | -      | 数据类型：`bool`/`int16`/`uint16`/`int32`/`uint32`/`float32` |
 
 ### 功能码（Function Code）
 
-| 功能码 | 名称 | 说明 | 适用数据类型 | access |
-|--------|------|------|-------------|--------|
-| 1 | Read Coils | 读线圈 | bool | ro |
-| 2 | Read Discrete Inputs | 读离散输入 | bool | ro |
-| 3 | Read Holding Registers | 读保持寄存器 | int16/uint16/int32/uint32/float32 | ro |
-| 4 | Read Input Registers | 读输入寄存器 | int16/uint16/int32/uint32/float32 | ro |
-| 5 | Write Single Coil | 写单个线圈 | bool | wo/wo |
-| 6 | Write Single Register | 写单个寄存器 | int16/uint16 | wo/wo |
-| 16 | Write Multiple Registers | 写多个寄存器 | int16/uint16/int32/uint32/float32 | wo/wo |
+| 功能码 | 名称                     | 说明         | 适用数据类型                      | access |
+| ------ | ------------------------ | ------------ | --------------------------------- | ------ |
+| 1      | Read Coils               | 读线圈       | bool                              | ro     |
+| 2      | Read Discrete Inputs     | 读离散输入   | bool                              | ro     |
+| 3      | Read Holding Registers   | 读保持寄存器 | int16/uint16/int32/uint32/float32 | ro     |
+| 4      | Read Input Registers     | 读输入寄存器 | int16/uint16/int32/uint32/float32 | ro     |
+| 5      | Write Single Coil        | 写单个线圈   | bool                              | wo/wo  |
+| 6      | Write Single Register    | 写单个寄存器 | int16/uint16                      | wo/wo  |
+| 16     | Write Multiple Registers | 写多个寄存器 | int16/uint16/int32/uint32/float32 | wo/wo  |
 
 ### 数据类型与寄存器数量
 
-| `data_type` | 说明 | `quantity` 值 | 寄存器占用 |
-|-------------|------|---------------|-----------|
-| `bool` | 布尔值（线圈/离散输入） | 1 | 1 bit |
-| `int16` | 16位有符号整数 | 1 | 1 寄存器 |
-| `uint16` | 16位无符号整数 | 1 | 1 寄存器 |
-| `int32` | 32位有符号整数 | 2 | 2 寄存器 |
-| `uint32` | 32位无符号整数 | 2 | 2 寄存器 |
-| `float32` | 32位浮点数（IEEE 754） | 2 | 2 寄存器 |
+| `data_type` | 说明                    | `quantity` 值 | 寄存器占用 |
+| ----------- | ----------------------- | ------------- | ---------- |
+| `bool`      | 布尔值（线圈/离散输入） | 1             | 1 bit      |
+| `int16`     | 16位有符号整数          | 1             | 1 寄存器   |
+| `uint16`    | 16位无符号整数          | 1             | 1 寄存器   |
+| `int32`     | 32位有符号整数          | 2             | 2 寄存器   |
+| `uint32`    | 32位无符号整数          | 2             | 2 寄存器   |
+| `float32`   | 32位浮点数（IEEE 754）  | 2             | 2 寄存器   |
 
 **注意**：32位类型（int32/uint32/float32）必须设置 `quantity = 2`。
 
 ### 数据转换参数
 
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `scale` | float | ✗ | `1.0` | 换算系数，原始值乘以该系数得到工程值 |
-| `unit` | string | ✗ | - | 工程单位，如 `"°C"`, `"%"`, `"V"`, `"A"`, `"kW"` |
+| 字段    | 类型   | 必填 | 默认值 | 说明                                             |
+| ------- | ------ | ---- | ------ | ------------------------------------------------ |
+| `scale` | float  | ✗    | `1.0`  | 换算系数，原始值乘以该系数得到工程值             |
+| `unit`  | string | ✗    | -      | 工程单位，如 `"°C"`, `"%"`, `"V"`, `"A"`, `"kW"` |
 
 **示例**：
 - 设备返回值：`250`，`scale = 0.1` → 工程值 `25.0`
@@ -144,9 +144,9 @@ cache_enabled = true
 
 ### 访问权限
 
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `access` | string | ✗ | `"ro"` | 访问权限：<br>`"ro"`: 只读<br>`"rw"`: 读写<br>`"wo"`: 只写 |
+| 字段     | 类型   | 必填 | 默认值 | 说明                                                       |
+| -------- | ------ | ---- | ------ | ---------------------------------------------------------- |
+| `access` | string | ✗    | `"ro"` | 访问权限：<br>`"ro"`: 只读<br>`"rw"`: 读写<br>`"wo"`: 只写 |
 
 **权限与功能码兼容性**：
 - `"ro"`：仅支持功能码 1/2/3/4（读操作）
@@ -155,9 +155,9 @@ cache_enabled = true
 
 ### 持久化缓存
 
-| 字段 | 类型 | 必填 | 默认值 | 说明 |
-|------|------|------|--------|------|
-| `cache_enabled` | bool | ✗ | `true` | 是否启用本地缓存（断点续传） |
+| 字段            | 类型 | 必填 | 默认值 | 说明                         |
+| --------------- | ---- | ---- | ------ | ---------------------------- |
+| `cache_enabled` | bool | ✗    | `true` | 是否启用本地缓存（断点续传） |
 
 - `true`：网络断开时数据缓存到 SQLite，恢复后续传
 - `false`：实时数据，不缓存，失败即丢弃
@@ -313,7 +313,6 @@ cache_enabled = false
 {
   "device": "温湿度传感器",
   "timestamp": 1704067200,
-  "quality": "good",
   "data": {
     "temperature": {
       "value": 25.3,
@@ -329,12 +328,11 @@ cache_enabled = false
 
 ### 字段说明
 
-| 字段 | 类型 | 说明 |
-|------|------|------|
-| `device` | string | 设备名称（来自 `name`） |
-| `timestamp` | int64 | Unix 时间戳（秒） |
-| `quality` | string | 数据质量：<br>`"good"`: 正常<br>`"bad"`: 读取失败<br>`"offline"`: 设备离线 |
-| `data` | object | 数据点集合，键为数据点名称 |
+| 字段        | 类型   | 说明                       |
+| ----------- | ------ | -------------------------- |
+| `device`    | string | 设备名称（来自 `name`）    |
+| `timestamp` | int64  | Unix 时间戳（秒）          |
+| `data`      | object | 数据点集合，键为数据点名称 |
 
 ### 数据点对象
 
@@ -381,10 +379,6 @@ cache_enabled = false
    2024-01-01T10:00:00Z INFO Modbus device '温湿度传感器' is offline after 30s failures
    2024-01-01T10:01:00Z INFO Modbus device '温湿度传感器' is back online
    ```
-
-3. **数据质量标记**：
-   - 离线设备的数据 `quality = "offline"`
-   - 读取失败时 `quality = "bad"`
 
 ## 断点续传集成
 
