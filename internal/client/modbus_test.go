@@ -3,13 +3,13 @@
 package client
 
 import (
+	"LEPG/internal/model"
 	"encoding/binary"
 	"fmt"
 	"math"
 	"os"
 	"os/exec"
 	"testing"
-	"LEPG/internal/model"
 	"time"
 )
 
@@ -18,7 +18,7 @@ func TestFloat32Parsing(t *testing.T) {
 	tests := []struct {
 		name      string
 		input     []byte
-		byteOrder ByteOrder
+		byteOrder model.ByteOrder
 		expected  float64
 	}{
 		{
