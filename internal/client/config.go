@@ -3,6 +3,7 @@ package client
 import (
 	"LEPG/internal/config"
 	"LEPG/internal/errors"
+	"LEPG/internal/model"
 	"fmt"
 	"time"
 )
@@ -146,12 +147,12 @@ type PointConfig struct {
 	FunctionCode int        `toml:"function_code" mapstructure:"function_code"` // Modbus function code (1/2/3/4/5/6/16)
 	Address      uint16     `toml:"address" mapstructure:"address"`             // Register starting address (decimal)
 	Quantity     uint16     `toml:"quantity" mapstructure:"quantity"`           // Number of registers
-	DataType     DataType   `toml:"data_type" mapstructure:"data_type"`         // Data type for parsing
-	ByteOrder    ByteOrder  `toml:"byte_order" mapstructure:"byte_order"`       // Byte order for multi-register types (default "abcd")
+	DataType     model.DataType   `toml:"data_type" mapstructure:"data_type"`         // Data type for parsing
+	ByteOrder    model.ByteOrder  `toml:"byte_order" mapstructure:"byte_order"`       // Byte order for multi-register types (default "abcd")
 	Scale        float64    `toml:"scale" mapstructure:"scale"`                 // Scaling factor (default 1.0)
 	Offset       float64    `toml:"offset" mapstructure:"offset"`               // Offset value (default 0.0)
 	Unit         string     `toml:"unit" mapstructure:"unit"`                   // Engineering unit (e.g., "°C", "%", "V")
-	Access       AccessType `toml:"access" mapstructure:"access"`               // Access permission: "ro", "rw", "wo" (default "ro")
+	Access       model.AccessType `toml:"access" mapstructure:"access"`               // Access permission: "ro", "rw", "wo" (default "ro")
 	// NOTE：目前Access没有用到
 	CacheEnabled bool `toml:"cache_enabled" mapstructure:"cache_enabled"` // Enable local caching for resume (default true)
 }
@@ -159,7 +160,7 @@ type PointConfig struct {
 // DeviceConfig defines a Modbus device configuration
 type DeviceConfig struct {
 	Name             string         `toml:"name" mapstructure:"name"`                           // Device unique identifier
-	Type             ConnectionType `toml:"type" mapstructure:"type"`                           // Connection type: "rtu" or "tcp"
+	Type             model.ConnectionType `toml:"type" mapstructure:"type"`                           // Connection type: "rtu" or "tcp"
 	Timeout          time.Duration  `toml:"timeout" mapstructure:"timeout"`                     // Request timeout (default "5s")
 	OfflineThreshold time.Duration  `toml:"offline_threshold" mapstructure:"offline_threshold"` // Offline detection threshold (default "30s")
 	EnableMonitor    bool           `toml:"enable_monitor" mapstructure:"enable_monitor"`       // Enable health monitoring (default true)
@@ -184,15 +185,15 @@ func (d *DeviceConfig) Validate() error {
 		return &ValidationError{Field: "name", Message: "device name cannot be empty"}
 	}
 
-	if d.Type != ConnectionTypeRTU && d.Type != ConnectionTypeTCP {
+	if d.Type != model.ConnectionTypeRTU && d.Type != model.ConnectionTypeTCP {
 		return &ValidationError{Field: "type", Message: "must be 'rtu' or 'tcp'"}
 	}
 
-	if d.Type == ConnectionTypeRTU && d.RTU == nil {
+	if d.Type == model.ConnectionTypeRTU && d.RTU == nil {
 		return &ValidationError{Field: "rtu", Message: "RTU config required when type=rtu"}
 	}
 
-	if d.Type == ConnectionTypeTCP && d.TCP == nil {
+	if d.Type == model.ConnectionTypeTCP && d.TCP == nil {
 		return &ValidationError{Field: "tcp", Message: "TCP config required when type=tcp"}
 	}
 
@@ -240,7 +241,7 @@ func (p *PointConfig) Validate() error {
 	}
 
 	// Validate access vs function code compatibility
-	if p.Access == AccessReadOnly && (p.FunctionCode == 5 || p.FunctionCode == 6 || p.FunctionCode == 16) {
+	if p.Access == model.AccessReadOnly && (p.FunctionCode == 5 || p.FunctionCode == 6 || p.FunctionCode == 16) {
 		return &ValidationError{
 			Field:   "access",
 			Message: "read-only access incompatible with write function codes",
@@ -248,13 +249,13 @@ func (p *PointConfig) Validate() error {
 	}
 
 	// Validate data type
-	validDataTypes := map[DataType]bool{
-		DataTypeBool:    true,
-		DataTypeInt16:   true,
-		DataTypeUint16:  true,
-		DataTypeInt32:   true,
-		DataTypeUint32:  true,
-		DataTypeFloat32: true,
+	validDataTypes := map[model.DataType]bool{
+		model.DataTypeBool:    true,
+		model.DataTypeInt16:   true,
+		model.DataTypeUint16:  true,
+		model.DataTypeInt32:   true,
+		model.DataTypeUint32:  true,
+		model.DataTypeFloat32: true,
 	}
 
 	if !validDataTypes[p.DataType] {
@@ -265,17 +266,17 @@ func (p *PointConfig) Validate() error {
 	}
 
 	// Validate byte order for multi-register types
-	if p.DataType == DataTypeInt32 || p.DataType == DataTypeUint32 || p.DataType == DataTypeFloat32 {
+	if p.DataType == model.DataTypeInt32 || p.DataType == model.DataTypeUint32 || p.DataType == model.DataTypeFloat32 {
 		// Set default to Big-Endian if not specified
 		if p.ByteOrder == "" {
-			p.ByteOrder = ByteOrderBigEndian
+			p.ByteOrder = model.ByteOrderBigEndian
 		}
 
-		validByteOrders := map[ByteOrder]bool{
-			ByteOrderBigEndian:       true,
-			ByteOrderLittleEndian:    true,
-			ByteOrderMidLittleEndian: true,
-			ByteOrderMidBigEndian:    true,
+		validByteOrders := map[model.ByteOrder]bool{
+			model.ByteOrderBigEndian:       true,
+			model.ByteOrderLittleEndian:    true,
+			model.ByteOrderMidLittleEndian: true,
+			model.ByteOrderMidBigEndian:    true,
 		}
 
 		if !validByteOrders[p.ByteOrder] {
@@ -286,7 +287,7 @@ func (p *PointConfig) Validate() error {
 		}
 	} else {
 		// For single-register types, byte order should not be set
-		if p.ByteOrder != "" && p.ByteOrder != ByteOrderBigEndian {
+		if p.ByteOrder != "" && p.ByteOrder != model.ByteOrderBigEndian {
 			return &ValidationError{
 				Field:   "byte_order",
 				Message: "only applicable for multi-register types (int32, uint32, float32)",

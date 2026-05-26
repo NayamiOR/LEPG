@@ -9,6 +9,7 @@ import (
 	"os"
 	"os/exec"
 	"testing"
+	"LEPG/internal/model"
 	"time"
 )
 
@@ -23,19 +24,19 @@ func TestFloat32Parsing(t *testing.T) {
 		{
 			name:      "10.0A big-endian",
 			input:     []byte{0x41, 0x20, 0x00, 0x00}, // IEEE 754: 10.0
-			byteOrder: ByteOrderBigEndian,
+			byteOrder: model.ByteOrderBigEndian,
 			expected:  10.0,
 		},
 		{
 			name:      "2.2kW big-endian",
 			input:     []byte{0x40, 0x0C, 0xCC, 0xCD}, // IEEE 754: 2.2
-			byteOrder: ByteOrderBigEndian,
+			byteOrder: model.ByteOrderBigEndian,
 			expected:  2.2,
 		},
 		{
 			name:      "10.0 little-endian",
 			input:     []byte{0x41, 0x20, 0x00, 0x00}, // IEEE 754: 10.0
-			byteOrder: ByteOrderLittleEndian,
+			byteOrder: model.ByteOrderLittleEndian,
 			expected:  10.0,
 		},
 	}
@@ -43,7 +44,7 @@ func TestFloat32Parsing(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			// Test byte order conversion
-			converted := ByteOrderConversion(tt.input, tt.byteOrder)
+			converted := model.ByteOrderConversion(tt.input, tt.byteOrder)
 
 			// Test float32 conversion
 			bits := binary.BigEndian.Uint32(converted)
@@ -86,7 +87,7 @@ func TestMain(m *testing.M) {
 func TestTcpDevicePolling_Integration_Connection(t *testing.T) {
 	device := &DeviceConfig{
 		Name:         "test-device",
-		Type:         ConnectionTypeTCP,
+		Type:         model.ConnectionTypeTCP,
 		Timeout:      5 * time.Second,
 		SlaveID:      1,
 		PollInterval: 1 * time.Second,
@@ -124,7 +125,7 @@ func TestTcpDevicePolling_Integration_Connection(t *testing.T) {
 func TestTcpDevicePolling_Integration_FC3_HoldingRegisters(t *testing.T) {
 	device := &DeviceConfig{
 		Name:         "test-fc3",
-		Type:         ConnectionTypeTCP,
+		Type:         model.ConnectionTypeTCP,
 		Timeout:      5 * time.Second,
 		SlaveID:      1,
 		PollInterval: 1 * time.Second,
@@ -160,7 +161,7 @@ func TestTcpDevicePolling_Integration_FC3_HoldingRegisters(t *testing.T) {
 func TestTcpDevicePolling_Integration_FC4_InputRegisters(t *testing.T) {
 	device := &DeviceConfig{
 		Name:         "test-fc4",
-		Type:         ConnectionTypeTCP,
+		Type:         model.ConnectionTypeTCP,
 		Timeout:      5 * time.Second,
 		SlaveID:      1,
 		PollInterval: 1 * time.Second,
