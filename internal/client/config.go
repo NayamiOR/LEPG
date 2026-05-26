@@ -41,7 +41,7 @@ var defaultClientValues = map[string]any{
 	"retry_interval": 5000,
 	"log_path":       "./logs/client.log",
 	"config_path":    "./config/config.toml",
-	"data_path":      "./data/",
+	"data_path":      "./data/data.db",
 }
 
 // InitClientConfig 初始化客户端配置
@@ -77,6 +77,15 @@ func InitClientConfig(provider config.IProvider) (*ClientConfig, error) {
 			}
 		}
 		cfg.Devices = devicesWrapper.Devices
+
+		// 检查设备名称唯一性
+		seen := make(map[string]bool, len(cfg.Devices))
+		for _, d := range cfg.Devices {
+			if seen[d.Name] {
+				return nil, fmt.Errorf("duplicate device name: %s", d.Name)
+			}
+			seen[d.Name] = true
+		}
 	}
 
 	Paths := PathsConfig{
@@ -143,27 +152,28 @@ type TcpSlaveConfig struct {
 
 // PointConfig defines a single data point on a Modbus device
 type PointConfig struct {
-	Name         string     `toml:"name" mapstructure:"name"`                   // Point identifier (JSON field name)
-	FunctionCode int        `toml:"function_code" mapstructure:"function_code"` // Modbus function code (1/2/3/4/5/6/16)
-	Address      uint16     `toml:"address" mapstructure:"address"`             // Register starting address (decimal)
-	Quantity     uint16     `toml:"quantity" mapstructure:"quantity"`           // Number of registers
+	Name         string           `toml:"name" mapstructure:"name"`                   // Point identifier (JSON field name)
+	FunctionCode int              `toml:"function_code" mapstructure:"function_code"` // Modbus function code (1/2/3/4/5/6/16)
+	Address      uint16           `toml:"address" mapstructure:"address"`             // Register starting address (decimal)
+	Quantity     uint16           `toml:"quantity" mapstructure:"quantity"`           // Number of registers
 	DataType     model.DataType   `toml:"data_type" mapstructure:"data_type"`         // Data type for parsing
 	ByteOrder    model.ByteOrder  `toml:"byte_order" mapstructure:"byte_order"`       // Byte order for multi-register types (default "abcd")
-	Scale        float64    `toml:"scale" mapstructure:"scale"`                 // Scaling factor (default 1.0)
-	Offset       float64    `toml:"offset" mapstructure:"offset"`               // Offset value (default 0.0)
-	Unit         string     `toml:"unit" mapstructure:"unit"`                   // Engineering unit (e.g., "°C", "%", "V")
+	Scale        float64          `toml:"scale" mapstructure:"scale"`                 // Scaling factor (default 1.0)
+	Offset       float64          `toml:"offset" mapstructure:"offset"`               // Offset value (default 0.0)
+	Unit         string           `toml:"unit" mapstructure:"unit"`                   // Engineering unit (e.g., "°C", "%", "V")
 	Access       model.AccessType `toml:"access" mapstructure:"access"`               // Access permission: "ro", "rw", "wo" (default "ro")
 	// NOTE：目前Access没有用到
+	// NOTE：目前CacheEnabled没有用到
 	CacheEnabled bool `toml:"cache_enabled" mapstructure:"cache_enabled"` // Enable local caching for resume (default true)
 }
 
 // DeviceConfig defines a Modbus device configuration
 type DeviceConfig struct {
-	Name             string         `toml:"name" mapstructure:"name"`                           // Device unique identifier
+	Name             string               `toml:"name" mapstructure:"name"`                           // Device unique identifier
 	Type             model.ConnectionType `toml:"type" mapstructure:"type"`                           // Connection type: "rtu" or "tcp"
-	Timeout          time.Duration  `toml:"timeout" mapstructure:"timeout"`                     // Request timeout (default "5s")
-	OfflineThreshold time.Duration  `toml:"offline_threshold" mapstructure:"offline_threshold"` // Offline detection threshold (default "30s")
-	EnableMonitor    bool           `toml:"enable_monitor" mapstructure:"enable_monitor"`       // Enable health monitoring (default true)
+	Timeout          time.Duration        `toml:"timeout" mapstructure:"timeout"`                     // Request timeout (default "5s")
+	OfflineThreshold time.Duration        `toml:"offline_threshold" mapstructure:"offline_threshold"` // Offline detection threshold (default "30s")
+	EnableMonitor    bool                 `toml:"enable_monitor" mapstructure:"enable_monitor"`       // Enable health monitoring (default true)
 
 	// RTU-specific (only when type = "rtu")
 	RTU *RtuSlaveConfig `toml:"rtu,omitempty" mapstructure:"rtu"`
