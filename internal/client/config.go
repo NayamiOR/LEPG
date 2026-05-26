@@ -23,6 +23,13 @@ type ClientConfig struct {
 	MaxRetry      int
 	RetryInterval int
 	Devices       []*DeviceConfig
+	Paths         PathsConfig
+}
+
+type PathsConfig struct {
+	LogPath    string
+	ConfigPath string
+	DataPath   string
 }
 
 var defaultClientValues = map[string]any{
@@ -31,13 +38,15 @@ var defaultClientValues = map[string]any{
 	"log_level":      "info",
 	"max_retry":      10,
 	"retry_interval": 5000,
+	"log_path":       "./logs/client.log",
+	"config_path":    "./config/config.toml",
+	"data_path":      "./data/",
 }
 
 // InitClientConfig 初始化客户端配置
 func InitClientConfig(provider config.IProvider) (*ClientConfig, error) {
 	cfg := &ClientConfig{}
 
-	// 从 provider 获取（DefaultProvider 兜底）
 	cfg.ServerUrl = provider.GetString("server")
 	cfg.Port = provider.GetInt("port")
 	cfg.LogLevel = provider.GetString("log_level")
@@ -68,6 +77,14 @@ func InitClientConfig(provider config.IProvider) (*ClientConfig, error) {
 		}
 		cfg.Devices = devicesWrapper.Devices
 	}
+
+	Paths := PathsConfig{
+		LogPath:    provider.GetString("log_path"),
+		ConfigPath: provider.GetString("config_path"),
+		DataPath:   provider.GetString("data_path"),
+	}
+
+	cfg.Paths = Paths
 
 	return cfg, nil
 }
@@ -110,10 +127,10 @@ func GetDefaultValues() map[string]any {
 
 // RtuSlaveConfig contains RTU-specific connection parameters
 type RtuSlaveConfig struct {
-	Port     string `toml:"port" mapstructure:"port"`      // Serial port (e.g., "/dev/ttyS0" or "COM3")
+	Port     string `toml:"port" mapstructure:"port"`           // Serial port (e.g., "/dev/ttyS0" or "COM3")
 	BaudRate int    `toml:"baud_rate" mapstructure:"baud_rate"` // Baud rate (e.g., 9600, 19200)
 	DataBits int    `toml:"data_bits" mapstructure:"data_bits"` // Data bits (default 8)
-	Parity   string `toml:"parity" mapstructure:"parity"`    // Parity: "N", "E", "O" (default "N")
+	Parity   string `toml:"parity" mapstructure:"parity"`       // Parity: "N", "E", "O" (default "N")
 	StopBits int    `toml:"stop_bits" mapstructure:"stop_bits"` // Stop bits (default 1)
 }
 
@@ -125,27 +142,27 @@ type TcpSlaveConfig struct {
 
 // PointConfig defines a single data point on a Modbus device
 type PointConfig struct {
-	Name         string     `toml:"name" mapstructure:"name"`          // Point identifier (JSON field name)
+	Name         string     `toml:"name" mapstructure:"name"`                   // Point identifier (JSON field name)
 	FunctionCode int        `toml:"function_code" mapstructure:"function_code"` // Modbus function code (1/2/3/4/5/6/16)
-	Address      uint16     `toml:"address" mapstructure:"address"`       // Register starting address (decimal)
-	Quantity     uint16     `toml:"quantity" mapstructure:"quantity"`      // Number of registers
-	DataType     DataType   `toml:"data_type" mapstructure:"data_type"`     // Data type for parsing
-	ByteOrder    ByteOrder  `toml:"byte_order" mapstructure:"byte_order"` // Byte order for multi-register types (default "abcd")
-	Scale        float64    `toml:"scale" mapstructure:"scale"`         // Scaling factor (default 1.0)
-	Offset       float64    `toml:"offset" mapstructure:"offset"`        // Offset value (default 0.0)
-	Unit         string     `toml:"unit" mapstructure:"unit"`          // Engineering unit (e.g., "°C", "%", "V")
-	Access       AccessType `toml:"access" mapstructure:"access"`        // Access permission: "ro", "rw", "wo" (default "ro")
+	Address      uint16     `toml:"address" mapstructure:"address"`             // Register starting address (decimal)
+	Quantity     uint16     `toml:"quantity" mapstructure:"quantity"`           // Number of registers
+	DataType     DataType   `toml:"data_type" mapstructure:"data_type"`         // Data type for parsing
+	ByteOrder    ByteOrder  `toml:"byte_order" mapstructure:"byte_order"`       // Byte order for multi-register types (default "abcd")
+	Scale        float64    `toml:"scale" mapstructure:"scale"`                 // Scaling factor (default 1.0)
+	Offset       float64    `toml:"offset" mapstructure:"offset"`               // Offset value (default 0.0)
+	Unit         string     `toml:"unit" mapstructure:"unit"`                   // Engineering unit (e.g., "°C", "%", "V")
+	Access       AccessType `toml:"access" mapstructure:"access"`               // Access permission: "ro", "rw", "wo" (default "ro")
 	// NOTE：目前Access没有用到
 	CacheEnabled bool `toml:"cache_enabled" mapstructure:"cache_enabled"` // Enable local caching for resume (default true)
 }
 
 // DeviceConfig defines a Modbus device configuration
 type DeviceConfig struct {
-	Name             string         `toml:"name" mapstructure:"name"`              // Device unique identifier
-	Type             ConnectionType `toml:"type" mapstructure:"type"`              // Connection type: "rtu" or "tcp"
-	Timeout          time.Duration  `toml:"timeout" mapstructure:"timeout"`           // Request timeout (default "5s")
+	Name             string         `toml:"name" mapstructure:"name"`                           // Device unique identifier
+	Type             ConnectionType `toml:"type" mapstructure:"type"`                           // Connection type: "rtu" or "tcp"
+	Timeout          time.Duration  `toml:"timeout" mapstructure:"timeout"`                     // Request timeout (default "5s")
 	OfflineThreshold time.Duration  `toml:"offline_threshold" mapstructure:"offline_threshold"` // Offline detection threshold (default "30s")
-	EnableMonitor    bool           `toml:"enable_monitor" mapstructure:"enable_monitor"`    // Enable health monitoring (default true)
+	EnableMonitor    bool           `toml:"enable_monitor" mapstructure:"enable_monitor"`       // Enable health monitoring (default true)
 
 	// RTU-specific (only when type = "rtu")
 	RTU *RtuSlaveConfig `toml:"rtu,omitempty" mapstructure:"rtu"`
@@ -157,7 +174,7 @@ type DeviceConfig struct {
 	SlaveID byte `toml:"slave_id" mapstructure:"slave_id"` // Modbus slave address (required for RTU, usually 1 for TCP)
 
 	// Data points
-	Points       []*PointConfig `toml:"points" mapstructure:"points"`        // List of data points to read/write
+	Points       []*PointConfig `toml:"points" mapstructure:"points"`               // List of data points to read/write
 	PollInterval time.Duration  `toml:"poll_interval" mapstructure:"poll_interval"` // Polling interval (e.g., "10s")
 }
 

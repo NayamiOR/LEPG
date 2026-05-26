@@ -11,6 +11,9 @@ import (
 )
 
 func MainFunc(cfg *ClientConfig) error {
+	// 打印cfg用于测试
+	slog.Info("Client configuration", "config", cfg)
+
 	wg := &sync.WaitGroup{}
 
 	// 启动所有配置的 Modbus 设备轮询
