@@ -4,6 +4,8 @@ import (
 	"LEPG/internal/config"
 	"LEPG/internal/errors"
 	"LEPG/internal/model"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"time"
 )
@@ -224,6 +226,28 @@ func (d *DeviceConfig) Validate() error {
 	}
 
 	return nil
+}
+
+// Hash generates a deterministic 16-char hex identifier for the device.
+// RTU: port + slaveID; TCP: host + port + slaveID.
+func (d *DeviceConfig) Hash() (string, error) {
+	var input string
+	switch d.Type {
+	case model.ConnectionTypeRTU:
+		if d.RTU == nil {
+			return "", fmt.Errorf("rtu config is nil")
+		}
+		input = fmt.Sprintf("rtu:%s:%d", d.RTU.Port, d.SlaveID)
+	case model.ConnectionTypeTCP:
+		if d.TCP == nil {
+			return "", fmt.Errorf("tcp config is nil")
+		}
+		input = fmt.Sprintf("tcp:%s:%d:%d", d.TCP.Host, d.TCP.Port, d.SlaveID)
+	default:
+		return "", fmt.Errorf("unsupported connection type: %s", d.Type)
+	}
+	h := sha256.Sum256([]byte(input))
+	return hex.EncodeToString(h[:8]), nil
 }
 
 // Validate checks if the point configuration is valid
