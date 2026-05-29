@@ -38,3 +38,5 @@ bin/*
 
 prompt/
 __pycache__/
+
+*.db

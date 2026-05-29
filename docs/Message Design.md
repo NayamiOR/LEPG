@@ -21,17 +21,19 @@
 
 Timestamp：4B的Unix时间戳，单位为毫秒，从2020年1月1日00:00:00 UTC开始计算。
 
+Payload上限64KB（2B Payload Length 的表达上限）
+
 ## Message Type
 
 目前定义了五种消息类型
 
-| 值 | 名称 | 用途 |
-|---|---|---|
-| 0x01 | `MsgTypeHandshake` | 握手消息 |
-| 0x02 | `MsgTypeAuth` | 认证消息 |
-| 0x03 | `MsgTypeHeartbeat` | 心跳消息 |
-| 0x04 | `MsgTypeError` | 错误消息 |
-| 0x05 | `MsgTypeUpload` | 上传数据消息
+| 值   | 名称               | 用途         |
+| ---- | ------------------ | ------------ |
+| 0x01 | `MsgTypeHandshake` | 握手消息     |
+| 0x02 | `MsgTypeAuth`      | 认证消息     |
+| 0x03 | `MsgTypeHeartbeat` | 心跳消息     |
+| 0x04 | `MsgTypeError`     | 错误消息     |
+| 0x05 | `MsgTypeUpload`    | 上传数据消息 |
 
 ## Flags
 
