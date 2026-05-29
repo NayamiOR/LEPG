@@ -7,23 +7,30 @@ import (
 	"math"
 	"time"
 
+	"LEPG/internal/client/cache"
 	"LEPG/internal/model"
 
 	"github.com/goburrow/modbus"
 )
 
-func TcpDevicePolling(dvc *DeviceConfig) error {
+func TcpDevicePolling(channel chan cache.Reading, dvc *DeviceConfig) error {
 	slog.Info("Modbus TCP polling started", "device", dvc.Name)
 	link := fmt.Sprintf("%s:%d", dvc.TCP.Host, dvc.TCP.Port)
 	handler := modbus.NewTCPClientHandler(link)
 	handler.SlaveId = dvc.SlaveID
 	handler.Timeout = dvc.Timeout * time.Millisecond
 
+	deviceHash, err := dvc.Hash()
+
+	if err != nil {
+		return err
+	}
+
 	// Create Modbus client
 	client := modbus.NewClient(handler)
 
 	// Connect to TCP server
-	err := handler.Connect()
+	err = handler.Connect()
 	if err != nil {
 		return err
 	}
@@ -102,19 +109,34 @@ func TcpDevicePolling(dvc *DeviceConfig) error {
 			}
 
 			// Log based on data type
-			if point.DataType == model.DataTypeBool {
-				slog.Info("Modbus TCP point polling success",
-					"point", point.Name,
-					"type", point.DataType,
-					"value", boolVal)
-			} else {
-				slog.Info("Modbus TCP point polling success",
-					"point", point.Name,
-					"type", point.DataType,
-					"unit", point.Unit,
-					"origin", originalResults,
-					"value", floatVal)
+			slog.Info("Captured!")
+			// if point.DataType == model.DataTypeBool {
+			// 	slog.Info("Modbus TCP point polling success",
+			// 		"point", point.Name,
+			// 		"type", point.DataType,
+			// 		"value", boolVal)
+			// } else {
+			// 	slog.Info("Modbus TCP point polling success",
+			// 		"point", point.Name,
+			// 		"type", point.DataType,
+			// 		"unit", point.Unit,
+			// 		"origin", originalResults,
+			// 		"value", floatVal)
+			// }
+
+			reading := cache.Reading{
+				ID:         0,
+				DeviceName: dvc.Name,
+				PointName:  point.Name,
+				DataType:   point.DataType,
+				NumVal:     floatVal,
+				BoolVal:    boolVal,
+				Unit:       point.Unit,
+				Timestamp:  time.Now().UnixMilli(),
+				DeviceHash: deviceHash,
 			}
+
+			channel <- reading
 		}
 	}
 	slog.Info("For died")

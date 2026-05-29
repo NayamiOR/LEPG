@@ -27,6 +27,7 @@ type ClientConfig struct {
 	RetryInterval int
 	Devices       []*DeviceConfig
 	Paths         PathsConfig
+	BufferSize    int
 }
 
 type PathsConfig struct {
@@ -44,6 +45,7 @@ var defaultClientValues = map[string]any{
 	"log_path":       "./logs/client.log",
 	"config_path":    "./config/config.toml",
 	"data_path":      "./data/data.db",
+	"buffer_size":    1000,
 }
 
 // InitClientConfig 初始化客户端配置
@@ -57,11 +59,15 @@ func InitClientConfig(provider config.IProvider) (*ClientConfig, error) {
 	cfg.Token = provider.GetString("token")
 	cfg.MaxRetry = provider.GetInt("max_retry")
 	cfg.RetryInterval = provider.GetInt("retry_interval")
+	cfg.BufferSize = provider.GetInt("buffer_size")
 
-	// 验证必需配置
-	if err := cfg.Validate(); err != nil {
-		return nil, err
+	Paths := PathsConfig{
+		LogPath:    provider.GetString("log_path"),
+		ConfigPath: provider.GetString("config_path"),
+		DataPath:   provider.GetString("data_path"),
 	}
+
+	cfg.Paths = Paths
 
 	// 复杂嵌套结构通过类型断言获取 unmarshal 能力
 	if u, ok := provider.(config.IUnmarshaler); ok {
@@ -90,13 +96,10 @@ func InitClientConfig(provider config.IProvider) (*ClientConfig, error) {
 		}
 	}
 
-	Paths := PathsConfig{
-		LogPath:    provider.GetString("log_path"),
-		ConfigPath: provider.GetString("config_path"),
-		DataPath:   provider.GetString("data_path"),
+	// 验证必需配置
+	if err := cfg.Validate(); err != nil {
+		return nil, err
 	}
-
-	cfg.Paths = Paths
 
 	return cfg, nil
 }
@@ -122,6 +125,10 @@ func (c *ClientConfig) Validate() error {
 	}
 	if c.RetryInterval < 0 {
 		errs = append(errs, errors.NewConfigInvalidError("retry_interval", "must be non-negative"))
+	}
+
+	if c.BufferSize <= 0 {
+		errs = append(errs, errors.NewConfigInvalidError("buffer_size", "must be positive"))
 	}
 
 	if len(errs) > 0 {

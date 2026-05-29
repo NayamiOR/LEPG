@@ -6,9 +6,9 @@ import (
 	"os"
 	"path/filepath"
 
-	_ "github.com/mattn/go-sqlite3"
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
+	"github.com/uptrace/bun/driver/sqliteshim"
 )
 
 type SQLiteStore struct {
@@ -20,8 +20,13 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 		return nil, err
 	}
 
-	sqldb, err := sql.Open("sqlite3", dbPath)
+	sqldb, err := sql.Open(sqliteshim.ShimName, dbPath)
 	if err != nil {
+		return nil, err
+	}
+
+	if err := sqldb.Ping(); err != nil {
+		sqldb.Close()
 		return nil, err
 	}
 

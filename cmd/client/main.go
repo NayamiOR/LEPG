@@ -3,6 +3,7 @@ package main
 import (
 	"LEPG/internal/client"
 	"LEPG/internal/config"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -47,7 +48,7 @@ var runCmd = &cobra.Command{
 
 		fmt.Printf("Client config: %+v\n", cfg)
 
-		if err := client.MainFunc(cfg); err != nil {
+		if err := client.MainFunc(cfg, context.Background()); err != nil {
 			fmt.Printf("Client error: %v\n", err)
 			os.Exit(1)
 		}

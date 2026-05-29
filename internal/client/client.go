@@ -1,7 +1,9 @@
 package client
 
 import (
+	"LEPG/internal/client/cache"
 	"LEPG/internal/msg"
+	"context"
 	"errors"
 	"fmt"
 	"log/slog"
@@ -10,31 +12,95 @@ import (
 	"time"
 )
 
-func MainFunc(cfg *ClientConfig) error {
-	// 打印cfg用于测试
+func MainFunc(cfg *ClientConfig, ctx context.Context) error {
 	slog.Info("Client configuration", "config", cfg)
 
-	wg := &sync.WaitGroup{}
+	// handshakeCh := make(chan HandshakeResult, 1)
+	// go func() {
+	// 	conn, err := net.Dial("tcp", net.JoinHostPort(cfg.ServerUrl, fmt.Sprintf("%d", cfg.Port)))
+	// 	if err != nil {
+	// 		handshakeCh <- HandshakeResult{Err: fmt.Errorf("connect failed: %w", err)}
+	// 		return
+	// 	}
+	// 	ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+	// 	defer cancel()
+	// 	select {
+	// 	case result := <-doHandshake(conn):
+	// 		handshakeCh <- result
+	// 	case <-ctx.Done():
+	// 		conn.Close()
+	// 		handshakeCh <- HandshakeResult{Err: fmt.Errorf("handshake timeout")}
+	// 	}
+	// }()
 
-	// 启动所有配置的 Modbus 设备轮询
 	if len(cfg.Devices) == 0 {
 		slog.Warn("No devices configured, client will run without Modbus polling")
-	} else {
-		for _, device := range cfg.Devices {
-			slog.Info("Starting device polling", "device", device.Name, "type", device.Type)
-
-			// 为每个设备启动独立的 goroutine
-			device := device // 创建局部变量避免闭包问题
-			wg.Go(func() {
-				if err := TcpDevicePolling(device); err != nil {
-					slog.Error("Device polling failed", "device", device.Name, "error", err)
-				}
-			})
-		}
+		return nil
 	}
 
-	wg.Wait()
-	return nil
+	// 所有设备共享一个 channel
+	ch := make(chan cache.Reading, cfg.BufferSize)
+
+	// Fan-out: 启动所有设备轮询
+	var wg sync.WaitGroup
+	for _, device := range cfg.Devices {
+		slog.Info("Starting device polling", "device", device.Name, "type", device.Type)
+		wg.Go(func() {
+			if err := TcpDevicePolling(ch, device); err != nil {
+				slog.Error("Device polling failed", "device", device.Name, "error", err)
+			}
+		})
+	}
+
+	// 所有轮询结束后关闭 channel，通知消费者退出
+	go func() {
+		wg.Wait()
+		close(ch)
+	}()
+
+	// Fan-in: 消费者主 goroutine 批量写入 SQLite
+	store, err := cache.NewSQLiteStore(cfg.Paths.DataPath)
+	if err != nil {
+		return fmt.Errorf("create SQLite store: %w", err)
+	}
+	defer store.Close()
+
+	buffer := make([]*cache.Reading, 0, cfg.BufferSize)
+	batchSize := 10
+	maxInterval := 30 * time.Second
+	ticker := time.NewTicker(maxInterval)
+	defer ticker.Stop()
+
+	flush := func() {
+		if len(buffer) == 0 {
+			return
+		}
+		if err := store.SaveReadings(ctx, buffer); err != nil {
+			slog.Error("Failed to save readings", "error", err)
+			return
+		}
+		slog.Info("Saved readings", "count", len(buffer))
+		buffer = buffer[:0]
+	}
+
+	for {
+		select {
+		case r, ok := <-ch:
+			if !ok {
+				flush()
+				return nil
+			}
+			buffer = append(buffer, &r)
+			if len(buffer) >= batchSize {
+				flush()
+			}
+		case <-ticker.C:
+			flush()
+		case <-ctx.Done():
+			flush()
+			return ctx.Err()
+		}
+	}
 }
 
 // 测试和后端的连接以及装包解包
@@ -51,7 +117,7 @@ func UploadLoopExample(cfg *ClientConfig) error {
 		if conn != nil {
 			break
 		}
-		conn, err = net.Dial("tcp", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
+		conn, err = net.Dial("tcp", net.JoinHostPort(cfg.ServerUrl, fmt.Sprintf("%d", cfg.Port)))
 
 		if err != nil {
 			if _, ok := errors.AsType[*net.OpError](err); ok {
