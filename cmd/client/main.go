@@ -48,7 +48,7 @@ var runCmd = &cobra.Command{
 
 		fmt.Printf("Client config: %+v\n", cfg)
 
-		if err := client.MainFunc(cfg, context.Background()); err != nil {
+		if err := client.MainFunc(context.Background(), cfg); err != nil {
 			fmt.Printf("Client error: %v\n", err)
 			os.Exit(1)
 		}
