@@ -18,7 +18,7 @@ func TcpDevicePolling(channel chan cache.Reading, dvc *DeviceConfig) error {
 	link := fmt.Sprintf("%s:%d", dvc.TCP.Host, dvc.TCP.Port)
 	handler := modbus.NewTCPClientHandler(link)
 	handler.SlaveId = dvc.SlaveID
-	handler.Timeout = dvc.Timeout * time.Millisecond
+	handler.Timeout = dvc.Timeout
 
 	deviceHash, err := dvc.Hash()
 
