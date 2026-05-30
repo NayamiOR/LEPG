@@ -5,8 +5,10 @@ import (
 	"LEPG/internal/utils"
 	"bytes"
 	"encoding/binary"
+	stderrors "errors"
 	"io"
 	"net"
+	"sync"
 	"sync/atomic"
 )
 
@@ -33,10 +35,15 @@ var globalIDGen = &atomicIdGenerator{}
 // 消息类型常量
 const (
 	MsgTypeHandshake uint8 = 0x01 // 握手消息
-	MsgTypeAuth      uint8 = 0x02 // 认证消息
+	MsgTypeUpload    uint8 = 0x02 // 上传数据消息
 	MsgTypeHeartbeat uint8 = 0x03 // 心跳消息
 	MsgTypeError     uint8 = 0x04 // 错误消息
-	MsgTypeUpload    uint8 = 0x05 // 上传数据消息
+)
+
+// Flags 常量
+const (
+	FlagRequest  uint8 = 0x00
+	FlagResponse uint8 = 0x01
 )
 
 type Msg struct {
@@ -94,8 +101,53 @@ type Packable interface {
 }
 
 func (f *MsgFactory) NewFromPacket(packet Packable) *Msg {
-	// TODO
-	return nil
+	// 保留向后兼容的包装：编码 packet 并构造 Msg
+	payload, err := packet.Encode()
+	if err != nil {
+		return nil
+	}
+	return &Msg{
+		Magic:      MagicNumber,
+		Version:    version,
+		Flags:      0,
+		Type:       packet.Type(),
+		MsgID:      f.idGen.Next(),
+		PayloadLen: uint16(len(payload)),
+		Timestamp:  utils.NewTimestamp(),
+		Payload:    payload,
+		Checksum:   utils.CalChecksum(payload),
+	}
+}
+
+// 注册制工厂：将消息类型映射到构造器，用于从 Msg 构造具体的 Packable
+var (
+	packetRegistry   = make(map[uint8]func(*Msg) (Packable, error))
+	packetRegistryMu sync.RWMutex
+)
+
+// RegisterPacketType 注册一个消息类型的构造器
+func RegisterPacketType(t uint8, ctor func(*Msg) (Packable, error)) {
+	packetRegistryMu.Lock()
+	defer packetRegistryMu.Unlock()
+	packetRegistry[t] = ctor
+}
+
+// UnregisterPacketType 注销消息类型的构造器
+func UnregisterPacketType(t uint8) {
+	packetRegistryMu.Lock()
+	defer packetRegistryMu.Unlock()
+	delete(packetRegistry, t)
+}
+
+// ParseMsg 使用已注册的构造器将通用 Msg 转换为具体的 Packable
+func ParseMsg(m *Msg) (Packable, error) {
+	packetRegistryMu.RLock()
+	ctor, ok := packetRegistry[m.Type]
+	packetRegistryMu.RUnlock()
+	if !ok {
+		return nil, stderrors.New("unknown packet type")
+	}
+	return ctor(m)
 }
 
 func (m *Msg) Encode() ([]byte, error) {
@@ -275,4 +327,103 @@ func NewWithID(flags uint8, msgID uint16, payload []byte) Msg {
 		Payload:    payload,
 		Checksum:   utils.CalChecksum(payload),
 	}
+}
+
+// --- 示例 Packable 实现与注册 ---
+
+type HandshakePacket struct {
+	Handshake *HandshakePayload
+	Response  *HandshakeResponsePayload
+}
+
+func (p *HandshakePacket) Encode() ([]byte, error) {
+	if p.Handshake != nil {
+		return p.Handshake.Encode()
+	}
+	if p.Response != nil {
+		return p.Response.Encode()
+	}
+	return nil, nil
+}
+
+func (p *HandshakePacket) Type() uint8 { return MsgTypeHandshake }
+
+func NewHandshakeRequestPacket(version uint8, sn, token string) *HandshakePacket {
+	return &HandshakePacket{
+		Handshake: &HandshakePayload{Version: version, Sn: sn, Token: token},
+	}
+}
+
+func NewHandshakeResponsePacket(code uint8, message string) *HandshakePacket {
+	return &HandshakePacket{
+		Response: &HandshakeResponsePayload{Code: code, Message: message},
+	}
+}
+
+type UploadPacket struct {
+	Payload []byte
+}
+
+func (p *UploadPacket) Encode() ([]byte, error) { return p.Payload, nil }
+func (p *UploadPacket) Type() uint8             { return MsgTypeUpload }
+func NewUploadPacket(payload []byte) *UploadPacket {
+	return &UploadPacket{Payload: payload}
+}
+
+type HeartbeatPacket struct {
+	Payload []byte
+}
+
+func (p *HeartbeatPacket) Encode() ([]byte, error) { return p.Payload, nil }
+func (p *HeartbeatPacket) Type() uint8             { return MsgTypeHeartbeat }
+func NewHeartbeatPacket(payload []byte) *HeartbeatPacket {
+	return &HeartbeatPacket{Payload: payload}
+}
+
+type ErrorPacket struct {
+	Payload []byte
+}
+
+func (p *ErrorPacket) Encode() ([]byte, error) { return p.Payload, nil }
+func (p *ErrorPacket) Type() uint8             { return MsgTypeError }
+func NewErrorPacket(payload []byte) *ErrorPacket {
+	return &ErrorPacket{Payload: payload}
+}
+
+func init() {
+	RegisterPacketType(MsgTypeHandshake, func(m *Msg) (Packable, error) {
+		if m == nil {
+			return nil, nil
+		}
+		if m.Flags&FlagResponse != 0 {
+			resp, err := DecodeHandshakeResponsePayload(m.Payload)
+			if err != nil {
+				return nil, err
+			}
+			return &HandshakePacket{Response: resp}, nil
+		}
+		hs, err := DecodeHandshakePayload(m.Payload)
+		if err != nil {
+			return nil, err
+		}
+		return &HandshakePacket{Handshake: hs}, nil
+	})
+	RegisterPacketType(MsgTypeUpload, func(m *Msg) (Packable, error) {
+		if m == nil {
+			return nil, nil
+		}
+		return &UploadPacket{Payload: m.Payload}, nil
+	})
+	RegisterPacketType(MsgTypeHeartbeat, func(m *Msg) (Packable, error) {
+		if m == nil {
+			return nil, nil
+		}
+		return &HeartbeatPacket{Payload: m.Payload}, nil
+	})
+	RegisterPacketType(MsgTypeError, func(m *Msg) (Packable, error) {
+		if m == nil {
+			return nil, nil
+		}
+		return &ErrorPacket{Payload: m.Payload}, nil
+	})
 }

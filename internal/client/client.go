@@ -2,9 +2,12 @@ package client
 
 import (
 	"LEPG/internal/client/cache"
+	"LEPG/internal/errors"
+	"LEPG/internal/msg"
 	"context"
 	"fmt"
 	"log/slog"
+	"net"
 	"sync"
 	"time"
 )
@@ -97,6 +100,101 @@ func consumeAndWrite(ctx context.Context, ch <-chan cache.Reading, store cache.S
 
 func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
 	slog.Info("Upload loop started")
+
+	conn, err := dialWithRetry(ctx, cfg)
+	if err != nil {
+		slog.Error("failed to connect after all retries", "error", err)
+		return
+	}
+	defer conn.Close()
+
+	slog.Info("connected to server", "address", fmt.Sprintf("%s:%d", cfg.ServerUrl, cfg.Port))
+
+	if err := performHandshake(conn, cfg); err != nil {
+		slog.Error("handshake failed", "error", err)
+		return
+	}
+
+	slog.Info("handshake successful")
+
+	// TODO: 从 SQLite store 读取数据上传
 	<-ctx.Done()
 	slog.Info("Upload loop stopped")
+}
+
+func dialWithRetry(ctx context.Context, cfg *ClientConfig) (net.Conn, error) {
+	addr := net.JoinHostPort(cfg.ServerUrl, fmt.Sprintf("%d", cfg.Port))
+	baseInterval := time.Duration(cfg.RetryInterval) * time.Millisecond
+
+	for attempt := 0; attempt < cfg.MaxRetry; attempt++ {
+		select {
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		default:
+		}
+
+		conn, err := net.DialTimeout("tcp", addr, 10*time.Second)
+		if err == nil {
+			return conn, nil
+		}
+
+		slog.Warn("connection failed, retrying",
+			"attempt", attempt+1,
+			"max_retries", cfg.MaxRetry,
+			"error", err)
+
+		backoff := baseInterval * time.Duration(1<<uint(attempt))
+		if backoff > 60*time.Second {
+			backoff = 60 * time.Second
+		}
+
+		timer := time.NewTimer(backoff)
+		select {
+		case <-timer.C:
+		case <-ctx.Done():
+			timer.Stop()
+			return nil, ctx.Err()
+		}
+	}
+
+	return nil, fmt.Errorf("failed to connect to %s after %d attempts", addr, cfg.MaxRetry)
+}
+
+func performHandshake(conn net.Conn, cfg *ClientConfig) error {
+	hsPayload, _ := (&msg.HandshakePayload{
+		Version: 1,
+		Sn:      cfg.Sn,
+		Token:   cfg.Token,
+	}).Encode()
+
+	hsMsg := msg.New(msg.MsgTypeHandshake, hsPayload)
+	encoded, err := hsMsg.Encode()
+	if err != nil {
+		return fmt.Errorf("encode handshake: %w", err)
+	}
+
+	if _, err := conn.Write(encoded); err != nil {
+		return fmt.Errorf("send handshake: %w", err)
+	}
+
+	respMsg, err := msg.DecodeFrame(conn)
+	if err != nil {
+		return fmt.Errorf("read handshake response: %w", err)
+	}
+
+	if respMsg.Type != msg.MsgTypeHandshake {
+		return fmt.Errorf("unexpected response type: 0x%02x", respMsg.Type)
+	}
+
+	resp, err := msg.DecodeHandshakeResponsePayload(respMsg.Payload)
+	if err != nil {
+		return fmt.Errorf("decode handshake response: %w", err)
+	}
+
+	if resp.Code != msg.HandshakeOK {
+		return fmt.Errorf("handshake rejected (code=%d): %s: %w",
+			resp.Code, resp.Message, errors.ErrHandshakeRejected)
+	}
+
+	return nil
 }

@@ -186,3 +186,53 @@ func TestNewMsg(t *testing.T) {
 	}
 }
 
+func TestHandshakePayloadRoundTrip(t *testing.T) {
+	original := &HandshakePayload{
+		Version: 1,
+		Sn:      "CLIENT001",
+		Token:   "token123456",
+	}
+	encoded, err := original.Encode()
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+	decoded, err := DecodeHandshakePayload(encoded)
+	if err != nil {
+		t.Fatalf("Decode failed: %v", err)
+	}
+	if decoded.Version != original.Version ||
+		decoded.Sn != original.Sn ||
+		decoded.Token != original.Token {
+		t.Errorf("Round-trip mismatch\ngot:  %+v\nwant: %+v", decoded, original)
+	}
+}
+
+func TestHandshakeResponseRoundTrip(t *testing.T) {
+	tests := []struct {
+		name    string
+		code    uint8
+		message string
+	}{
+		{"success", HandshakeOK, "OK"},
+		{"bad sn", HandshakeBadSn, "unknown SN"},
+		{"bad token", HandshakeBadToken, "token mismatch"},
+		{"empty message", HandshakeFailed, ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := &HandshakeResponsePayload{Code: tt.code, Message: tt.message}
+			encoded, err := original.Encode()
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+			decoded, err := DecodeHandshakeResponsePayload(encoded)
+			if err != nil {
+				t.Fatalf("Decode failed: %v", err)
+			}
+			if decoded.Code != original.Code || decoded.Message != original.Message {
+				t.Errorf("Mismatch\ngot:  %+v\nwant: %+v", decoded, original)
+			}
+		})
+	}
+}
+

@@ -24,58 +24,91 @@ func ReceiveLoop(cfg *ServerConfig) error {
 		}
 
 		slog.Info("accept a connection", "remote_addr", conn.RemoteAddr().String())
-		go HandleConnection(conn)
+		go HandleConnection(conn, cfg.Clients)
 	}
 }
 
-func HandleConnection(conn net.Conn) {
+func HandleConnection(conn net.Conn, clients []ClientDef) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
 	slog.Info("handling connection", "remote_addr", remoteAddr)
 
-	messageCount := 0
+	// 第一步：等待握手消息
+	hsMsg, err := msg.DecodeFrame(conn)
+	if err != nil {
+		slog.Warn("failed to read handshake", "remote_addr", remoteAddr, "error", err)
+		return
+	}
 
-	// 循环处理连接中的多条消息
+	if hsMsg.Type != msg.MsgTypeHandshake {
+		slog.Warn("expected handshake message", "remote_addr", remoteAddr, "got_type", hsMsg.Type)
+		sendHandshakeResponse(conn, msg.HandshakeFailed, "expected handshake")
+		return
+	}
+
+	hsPayload, err := msg.DecodeHandshakePayload(hsMsg.Payload)
+	if err != nil {
+		slog.Warn("invalid handshake payload", "remote_addr", remoteAddr, "error", err)
+		sendHandshakeResponse(conn, msg.HandshakeFailed, "malformed handshake")
+		return
+	}
+
+	// 校验 Sn + Token
+	var matched *ClientDef
+	for i := range clients {
+		if clients[i].Sn == hsPayload.Sn {
+			matched = &clients[i]
+			break
+		}
+	}
+
+	if matched == nil {
+		slog.Warn("unknown client SN", "remote_addr", remoteAddr, "sn", hsPayload.Sn)
+		sendHandshakeResponse(conn, msg.HandshakeBadSn, "unknown SN")
+		return
+	}
+	if matched.Token != hsPayload.Token {
+		slog.Warn("token mismatch", "remote_addr", remoteAddr, "sn", hsPayload.Sn)
+		sendHandshakeResponse(conn, msg.HandshakeBadToken, "token mismatch")
+		return
+	}
+
+	// 鉴权成功
+	slog.Info("client authenticated", "remote_addr", remoteAddr, "sn", hsPayload.Sn)
+	sendHandshakeResponse(conn, msg.HandshakeOK, "OK")
+
+	// 进入正常消息处理循环
+	messageCount := 1
 	for {
 		message, err := msg.DecodeFrame(conn)
 		if err != nil {
-			// 连接关闭或读取错误
-			if messageCount > 0 {
+			if messageCount > 1 {
 				slog.Info("connection closed",
 					"remote_addr", remoteAddr,
+					"sn", hsPayload.Sn,
 					"messages_processed", messageCount,
-					"error", err)
-			} else {
-				slog.Warn("connection failed to receive first message",
-					"remote_addr", remoteAddr,
 					"error", err)
 			}
 			return
 		}
 
 		messageCount++
-
-		// 成功接收消息，记录日志
 		slog.Info("received message",
 			"remote_addr", remoteAddr,
+			"sn", hsPayload.Sn,
 			"count", messageCount,
 			"type", message.Type,
 			"msg_id", message.MsgID,
-			"flags", message.Flags,
-			"payload_len", message.PayloadLen,
-			"timestamp", message.Timestamp,
-			"checksum", message.Checksum)
-
-		// 如果有payload，也记录内容
-		if len(message.Payload) > 0 {
-			slog.Info("message payload",
-				"remote_addr", remoteAddr,
-				"size", len(message.Payload),
-				"data", string(message.Payload))
-		}
-
-		// TODO: 这里可以添加业务逻辑处理消息
-		// 例如：根据 message.Type 进行不同的处理
+			"payload_len", message.PayloadLen)
 	}
+}
+
+func sendHandshakeResponse(conn net.Conn, code uint8, message string) {
+	resp := &msg.HandshakeResponsePayload{Code: code, Message: message}
+	payload, _ := resp.Encode()
+	responseMsg := msg.New(msg.MsgTypeHandshake, payload)
+	responseMsg.Flags = msg.FlagResponse
+	encoded, _ := responseMsg.Encode()
+	conn.Write(encoded)
 }

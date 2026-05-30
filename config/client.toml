@@ -3,7 +3,7 @@ max_retry = 10
 port = 8883
 retry_interval = 5000
 server = '127.0.0.1'
-sn = "CENTRAL001"
+sn = "CLIENT001"
 token = "token123456"
 
 # Modbus 设备配置
@@ -21,12 +21,12 @@ poll_interval = "1s"
 
 [devices.tcp]
 host = "127.0.0.1"
-port = 5020  # 对应模拟器的温湿度传感器
+port = 5020        # 对应模拟器的温湿度传感器
 
 # HR[0]: 温度 250 → 25.0°C (scale=0.1)
 [[devices.points]]
 name = "temperature"
-function_code = 3  # Read Holding Registers
+function_code = 3    # Read Holding Registers
 address = 0
 quantity = 1
 data_type = "int16"
@@ -61,7 +61,7 @@ poll_interval = "1s"
 
 [devices.tcp]
 host = "127.0.0.1"
-port = 5021  # 对应模拟器的智能电表
+port = 5021        # 对应模拟器的智能电表
 
 # HR[100]: 电压 2200 → 220.0V (scale=0.1)
 [[devices.points]]
@@ -83,7 +83,7 @@ function_code = 3
 address = 102
 quantity = 2
 data_type = "float32"
-byte_order = "abcd"  # IEEE 754 big-endian
+byte_order = "abcd"   # IEEE 754 big-endian
 scale = 1.0
 offset = 0
 unit = "A"
@@ -96,7 +96,7 @@ function_code = 3
 address = 104
 quantity = 2
 data_type = "float32"
-byte_order = "abcd"  # IEEE 754 big-endian
+byte_order = "abcd"   # IEEE 754 big-endian
 scale = 1.0
 offset = 0
 unit = "kW"

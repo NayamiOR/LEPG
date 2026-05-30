@@ -30,10 +30,9 @@ Payload上限64KB（2B Payload Length 的表达上限）
 | 值   | 名称               | 用途         |
 | ---- | ------------------ | ------------ |
 | 0x01 | `MsgTypeHandshake` | 握手消息     |
-| 0x02 | `MsgTypeAuth`      | 认证消息     |
+| 0x02 | `MsgTypeUpload`    | 上传数据消息 |
 | 0x03 | `MsgTypeHeartbeat` | 心跳消息     |
 | 0x04 | `MsgTypeError`     | 错误消息     |
-| 0x05 | `MsgTypeUpload`    | 上传数据消息 |
 
 ## Flags
 

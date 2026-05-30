@@ -11,7 +11,8 @@ var (
 	ErrChecksumMismatch = errors.New("protocol: checksum mismatch")
 	ErrPayloadTooLarge  = errors.New("protocol: payload size exceeds limit")
 	ErrUnexpectedEOF    = errors.New("protocol: unexpected end of frame") // 区别于 io.EOF
-	ErrInvalidVersion   = errors.New("protocol: unsupported version")
+	ErrInvalidVersion    = errors.New("protocol: unsupported version")
+	ErrHandshakeRejected = errors.New("handshake: server rejected connection")
 )
 
 // ConfigNotSetError 配置未设置错误
