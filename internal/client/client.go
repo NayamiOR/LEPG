@@ -59,7 +59,7 @@ func MainFunc(cfg *ClientConfig, ctx context.Context) error {
 	}()
 
 	// Fan-in: 消费者主 goroutine 批量写入 SQLite
-	store, err := cache.NewSQLiteStore(cfg.Paths.DataPath)
+	store, err := cache.NewSQLiteStore(ctx, cfg.Paths.DataPath)
 	if err != nil {
 		return fmt.Errorf("create SQLite store: %w", err)
 	}
@@ -79,7 +79,7 @@ func MainFunc(cfg *ClientConfig, ctx context.Context) error {
 			slog.Error("Failed to save readings", "error", err)
 			return
 		}
-		slog.Info("Saved readings", "count", len(buffer))
+		slog.Info("Saved readings")
 		buffer = buffer[:0]
 	}
 

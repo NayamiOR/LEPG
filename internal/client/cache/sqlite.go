@@ -3,19 +3,23 @@ package cache
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"os"
 	"path/filepath"
 
 	"github.com/uptrace/bun"
 	"github.com/uptrace/bun/dialect/sqlitedialect"
 	"github.com/uptrace/bun/driver/sqliteshim"
+	"github.com/uptrace/bun/migrate"
+
+	migrations "LEPG/internal/client/cache/migrations"
 )
 
 type SQLiteStore struct {
 	db *bun.DB
 }
 
-func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
+func NewSQLiteStore(ctx context.Context, dbPath string) (*SQLiteStore, error) {
 	if err := os.MkdirAll(filepath.Dir(dbPath), 0755); err != nil {
 		return nil, err
 	}
@@ -32,12 +36,14 @@ func NewSQLiteStore(dbPath string) (*SQLiteStore, error) {
 
 	db := bun.NewDB(sqldb, sqlitedialect.New())
 
-	if _, err := db.NewCreateTable().
-		Model((*Reading)(nil)).
-		IfNotExists().
-		Exec(context.Background()); err != nil {
-		sqldb.Close()
-		return nil, err
+	migrator := migrate.NewMigrator(db, migrations.Migrations)
+	if err := migrator.Init(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("init migrator: %w", err)
+	}
+	if _, err := migrator.Migrate(ctx); err != nil {
+		db.Close()
+		return nil, fmt.Errorf("run migrations: %w", err)
 	}
 
 	return &SQLiteStore{db: db}, nil
