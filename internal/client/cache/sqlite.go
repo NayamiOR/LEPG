@@ -28,6 +28,7 @@ func NewSQLiteStore(ctx context.Context, dbPath string) (*SQLiteStore, error) {
 	if err != nil {
 		return nil, err
 	}
+	sqldb.SetMaxOpenConns(1)
 
 	if err := sqldb.Ping(); err != nil {
 		sqldb.Close()

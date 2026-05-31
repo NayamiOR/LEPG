@@ -1,7 +1,10 @@
 package server
 
 import (
+	"LEPG/internal/client/cache"
 	"LEPG/internal/msg"
+	"bytes"
+	"encoding/gob"
 	"fmt"
 	"log/slog"
 	"net"
@@ -101,6 +104,24 @@ func HandleConnection(conn net.Conn, clients []ClientDef) {
 			"type", message.Type,
 			"msg_id", message.MsgID,
 			"payload_len", message.PayloadLen)
+
+		if message.Type == msg.MsgTypeUpload {
+			dec := gob.NewDecoder(bytes.NewReader(message.Payload))
+			for {
+				var r cache.Reading
+				if err := dec.Decode(&r); err != nil {
+					break
+				}
+				slog.Info("reading",
+					"id", r.ID,
+					"device", r.DeviceName,
+					"point", r.PointName,
+					"num_val", r.NumVal,
+					"bool_val", r.BoolVal,
+					"unit", r.Unit,
+					"timestamp", r.Timestamp)
+			}
+		}
 	}
 }
 
