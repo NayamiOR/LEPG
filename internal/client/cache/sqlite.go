@@ -24,7 +24,7 @@ func NewSQLiteStore(ctx context.Context, dbPath string) (*SQLiteStore, error) {
 		return nil, err
 	}
 
-	sqldb, err := sql.Open(sqliteshim.ShimName, dbPath)
+	sqldb, err := sql.Open(sqliteshim.ShimName, dbPath+"?_journal_mode=WAL")
 	if err != nil {
 		return nil, err
 	}
@@ -69,6 +69,29 @@ func (s *SQLiteStore) LoadReadings(ctx context.Context, limit int) ([]*Reading, 
 		Limit(limit).
 		Scan(ctx)
 	return readings, err
+}
+
+func (s *SQLiteStore) LoadPendingReadings(ctx context.Context, limit int) ([]*Reading, error) {
+	var readings []*Reading
+	err := s.db.NewSelect().
+		Model(&readings).
+		Where("status IN (?, ?)", 0, 3).
+		OrderExpr("id ASC").
+		Limit(limit).
+		Scan(ctx)
+	return readings, err
+}
+
+func (s *SQLiteStore) UpdateReadingsStatus(ctx context.Context, ids []int64, status int) error {
+	if len(ids) == 0 {
+		return nil
+	}
+	_, err := s.db.NewUpdate().
+		Model((*Reading)(nil)).
+		Set("status = ?", status).
+		Where("id IN (?)", bun.List(ids)).
+		Exec(ctx)
+	return err
 }
 
 func (s *SQLiteStore) DeleteReadings(ctx context.Context, ids []int64) error {

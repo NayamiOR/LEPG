@@ -27,7 +27,9 @@ type ClientConfig struct {
 	RetryInterval int
 	Devices       []*DeviceConfig
 	Paths         PathsConfig
-	BufferSize    int
+	BufferSize      int
+	UploadBatchSize int
+	UploadInterval  int
 }
 
 type PathsConfig struct {
@@ -45,7 +47,9 @@ var defaultClientValues = map[string]any{
 	"log_path":       "./logs/client.log",
 	"config_path":    "./config/config.toml",
 	"data_path":      "./data/data.db",
-	"buffer_size":    1000,
+	"buffer_size":      1000,
+	"upload_batch_size": 100,
+	"upload_interval":   5000,
 }
 
 // InitClientConfig 初始化客户端配置
@@ -60,6 +64,8 @@ func InitClientConfig(provider config.IProvider) (*ClientConfig, error) {
 	cfg.MaxRetry = provider.GetInt("max_retry")
 	cfg.RetryInterval = provider.GetInt("retry_interval")
 	cfg.BufferSize = provider.GetInt("buffer_size")
+	cfg.UploadBatchSize = provider.GetInt("upload_batch_size")
+	cfg.UploadInterval = provider.GetInt("upload_interval")
 
 	Paths := PathsConfig{
 		LogPath:    provider.GetString("log_path"),
@@ -129,6 +135,12 @@ func (c *ClientConfig) Validate() error {
 
 	if c.BufferSize <= 0 {
 		errs = append(errs, errors.NewConfigInvalidError("buffer_size", "must be positive"))
+	}
+	if c.UploadBatchSize <= 0 {
+		errs = append(errs, errors.NewConfigInvalidError("upload_batch_size", "must be positive"))
+	}
+	if c.UploadInterval <= 0 {
+		errs = append(errs, errors.NewConfigInvalidError("upload_interval", "must be positive"))
 	}
 
 	if len(errs) > 0 {
@@ -238,7 +250,7 @@ func (d *DeviceConfig) Validate() error {
 // Hash generates a deterministic 16-char hex identifier for the device.
 // RTU: port + slaveID; TCP: host + port + slaveID.
 func (d *DeviceConfig) Hash() (string, error) {
-	var input string
+	var input string // Hash 只包含设备连接方式
 	switch d.Type {
 	case model.ConnectionTypeRTU:
 		if d.RTU == nil {

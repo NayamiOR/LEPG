@@ -134,6 +134,7 @@ func TcpDevicePolling(channel chan cache.Reading, dvc *DeviceConfig) error {
 				Unit:       point.Unit,
 				Timestamp:  time.Now().UnixMilli(),
 				DeviceHash: deviceHash,
+				Status:     0,
 			}
 
 			channel <- reading

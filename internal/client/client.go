@@ -4,7 +4,9 @@ import (
 	"LEPG/internal/client/cache"
 	"LEPG/internal/errors"
 	"LEPG/internal/msg"
+	"bytes"
 	"context"
+	"encoding/gob"
 	"fmt"
 	"log/slog"
 	"net"
@@ -117,9 +119,90 @@ func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
 
 	slog.Info("handshake successful")
 
-	// TODO: 从 SQLite store 读取数据上传
-	<-ctx.Done()
-	slog.Info("Upload loop stopped")
+	const maxPayloadSize = 65535
+	pollInterval := time.Duration(cfg.UploadInterval) * time.Millisecond
+	timer := time.NewTimer(0) // trigger immediately on first iteration
+	defer timer.Stop()
+
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("Upload loop stopped")
+			return
+		case <-timer.C:
+			timer.Reset(pollInterval)
+
+			readings, err := store.LoadPendingReadings(ctx, cfg.UploadBatchSize)
+			if err != nil {
+				slog.Error("Failed to load pending readings", "error", err)
+				continue
+			}
+			if len(readings) == 0 {
+				continue
+			}
+
+			if err := uploadReadings(ctx, conn, store, readings, maxPayloadSize); err != nil {
+				slog.Error("Upload failed", "error", err)
+				return
+			}
+		}
+	}
+}
+
+func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, readings []*cache.Reading, maxPayloadSize int) error {
+	i := 0
+	for i < len(readings) {
+		var payloadBuf bytes.Buffer
+		enc := gob.NewEncoder(&payloadBuf)
+		var batchIDs []int64
+
+		for i < len(readings) {
+			prevLen := payloadBuf.Len()
+			if err := enc.Encode(readings[i]); err != nil {
+				return fmt.Errorf("gob encode reading %d: %w", readings[i].ID, err)
+			}
+			if payloadBuf.Len() > maxPayloadSize {
+				if prevLen == 0 {
+					slog.Warn("Single reading exceeds max payload size, skipping", "id", readings[i].ID)
+					store.UpdateReadingsStatus(ctx, []int64{readings[i].ID}, 3)
+					i++
+					payloadBuf.Reset()
+					continue
+				}
+				payloadBuf.Truncate(prevLen)
+				break
+			}
+			batchIDs = append(batchIDs, readings[i].ID)
+			i++
+		}
+
+		if payloadBuf.Len() == 0 {
+			continue
+		}
+
+		if err := store.UpdateReadingsStatus(ctx, batchIDs, 1); err != nil {
+			return fmt.Errorf("mark readings as uploading: %w", err)
+		}
+
+		uploadMsg := msg.New(msg.MsgTypeUpload, payloadBuf.Bytes())
+		encoded, err := uploadMsg.Encode()
+		if err != nil {
+			store.UpdateReadingsStatus(ctx, batchIDs, 3)
+			return fmt.Errorf("encode upload message: %w", err)
+		}
+
+		if _, err := conn.Write(encoded); err != nil {
+			store.UpdateReadingsStatus(ctx, batchIDs, 3)
+			return fmt.Errorf("write upload message: %w", err)
+		}
+
+		if err := store.UpdateReadingsStatus(ctx, batchIDs, 2); err != nil {
+			slog.Error("Failed to mark readings as uploaded", "error", err)
+		}
+
+		slog.Info("Uploaded batch", "count", len(batchIDs), "payload_size", payloadBuf.Len())
+	}
+	return nil
 }
 
 func dialWithRetry(ctx context.Context, cfg *ClientConfig) (net.Conn, error) {

@@ -26,6 +26,8 @@ type Reading struct {
 type Store interface {
 	SaveReadings(ctx context.Context, readings []*Reading) error
 	LoadReadings(ctx context.Context, limit int) ([]*Reading, error)
+	LoadPendingReadings(ctx context.Context, limit int) ([]*Reading, error)
+	UpdateReadingsStatus(ctx context.Context, ids []int64, status int) error
 	DeleteReadings(ctx context.Context, ids []int64) error
 	Close() error
 }
