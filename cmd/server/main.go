@@ -59,7 +59,18 @@ var runCmd = &cobra.Command{
 		}
 		defer store.Close()
 
-		if err := server.ReceiveLoop(cfg, store); err != nil {
+		// 创建并启动 MQTT broker
+		broker := server.NewMqttBroker(&cfg.Mqtt)
+		if err := broker.Start(); err != nil {
+			fmt.Printf("Failed to start MQTT broker: %v\n", err)
+			os.Exit(1)
+		}
+		defer broker.Stop()
+
+		// TODO: 数据桥接阶段替换为 server.NewMqttPublisher(broker)
+		var publisher server.EventPublisher = new(server.NopPublisher)
+
+		if err := server.ReceiveLoop(cfg, store, publisher); err != nil {
 			fmt.Printf("Server error: %v\n", err)
 			os.Exit(1)
 		}

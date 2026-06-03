@@ -1,6 +1,10 @@
 log_level = 'info'
 port = 8883
 
+# MQTT broker 配置
+mqtt_tcp = "127.0.0.1:1883"
+mqtt_ws = "127.0.0.1:8083"
+
 # 客户端列表配置
 # 定义允许连接到服务器的客户端
 [[clients]]

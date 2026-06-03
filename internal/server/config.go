@@ -17,6 +17,12 @@ type ServerConfig struct {
 	LogLevel string
 	DataPath string
 	Clients  []ClientDef
+	Mqtt     MqttConfig
+}
+
+type MqttConfig struct {
+	TCPAddr string
+	WSAddr  string
 }
 
 type ClientDef struct {
@@ -28,6 +34,8 @@ type ClientDef struct {
 var defaultServerValues = map[string]any{
 	"port":      8883,
 	"log_level": "info",
+	"mqtt_tcp":  "127.0.0.1:1883",
+	"mqtt_ws":   "127.0.0.1:8083",
 }
 
 // InitServerConfig 初始化服务端配置
@@ -38,6 +46,10 @@ func InitServerConfig(provider config.IProvider) (*ServerConfig, error) {
 	cfg.Port = provider.GetInt("port")
 	cfg.LogLevel = provider.GetString("log_level")
 	cfg.DataPath = "/var/cache/lepgs/lepgs.db"
+	cfg.Mqtt = MqttConfig{
+		TCPAddr: provider.GetString("mqtt_tcp"),
+		WSAddr:  provider.GetString("mqtt_ws"),
+	}
 
 	// 复杂嵌套结构通过类型断言获取 unmarshal 能力
 	if u, ok := provider.(config.IUnmarshaler); ok {

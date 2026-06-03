@@ -13,7 +13,7 @@ import (
 )
 
 // ReceiveLoop 接收循环
-func ReceiveLoop(cfg *ServerConfig, s cache.Store) error {
+func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
 		return err
@@ -29,11 +29,11 @@ func ReceiveLoop(cfg *ServerConfig, s cache.Store) error {
 		}
 
 		slog.Info("accept a connection", "remote_addr", conn.RemoteAddr().String())
-		go HandleConnection(conn, cfg.Clients, s)
+		go HandleConnection(conn, cfg.Clients, s, publisher)
 	}
 }
 
-func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store) {
+func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store, publisher EventPublisher) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
@@ -129,6 +129,12 @@ func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store) {
 						"remote_addr", remoteAddr,
 						"sn", hsPayload.Sn,
 						"count", len(readings))
+					// TODO: 后续实现 payload 序列化（JSON/MessagePack），框架阶段仅预留调用点
+					// payload := serializeReadings(readings)
+					// if err := publisher.PublishDeviceReadings(hsPayload.Sn, payload); err != nil {
+					//     slog.Error("mqtt publish readings failed", "sn", hsPayload.Sn, "error", err)
+					// }
+					_ = publisher
 				}
 			}
 		}
