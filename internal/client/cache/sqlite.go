@@ -1,6 +1,7 @@
 package cache
 
 import (
+	"LEPG/internal/model"
 	"context"
 	"database/sql"
 	"fmt"
@@ -54,7 +55,7 @@ func (s *SQLiteStore) Close() error {
 	return s.db.Close()
 }
 
-func (s *SQLiteStore) SaveReadings(ctx context.Context, readings []*Reading) error {
+func (s *SQLiteStore) SaveReadings(ctx context.Context, readings []*model.Reading) error {
 	if len(readings) == 0 {
 		return nil
 	}
@@ -62,8 +63,8 @@ func (s *SQLiteStore) SaveReadings(ctx context.Context, readings []*Reading) err
 	return err
 }
 
-func (s *SQLiteStore) LoadReadings(ctx context.Context, limit int) ([]*Reading, error) {
-	var readings []*Reading
+func (s *SQLiteStore) LoadReadings(ctx context.Context, limit int) ([]*model.Reading, error) {
+	var readings []*model.Reading
 	err := s.db.NewSelect().
 		Model(&readings).
 		OrderExpr("id ASC").
@@ -72,8 +73,8 @@ func (s *SQLiteStore) LoadReadings(ctx context.Context, limit int) ([]*Reading, 
 	return readings, err
 }
 
-func (s *SQLiteStore) LoadPendingReadings(ctx context.Context, limit int) ([]*Reading, error) {
-	var readings []*Reading
+func (s *SQLiteStore) LoadPendingReadings(ctx context.Context, limit int) ([]*model.Reading, error) {
+	var readings []*model.Reading
 	err := s.db.NewSelect().
 		Model(&readings).
 		Where("status IN (?, ?)", 0, 3).
@@ -88,7 +89,7 @@ func (s *SQLiteStore) UpdateReadingsStatus(ctx context.Context, ids []int64, sta
 		return nil
 	}
 	_, err := s.db.NewUpdate().
-		Model((*Reading)(nil)).
+		Model((*model.Reading)(nil)).
 		Set("status = ?", status).
 		Where("id IN (?)", bun.List(ids)).
 		Exec(ctx)
@@ -100,7 +101,7 @@ func (s *SQLiteStore) DeleteReadings(ctx context.Context, ids []int64) error {
 		return nil
 	}
 	_, err := s.db.NewDelete().
-		Model((*Reading)(nil)).
+		Model((*model.Reading)(nil)).
 		Where("id IN (?)", bun.List(ids)).
 		Exec(ctx)
 	return err

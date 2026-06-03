@@ -7,13 +7,12 @@ import (
 	"math"
 	"time"
 
-	"LEPG/internal/client/cache"
 	"LEPG/internal/model"
 
 	"github.com/goburrow/modbus"
 )
 
-func TcpDevicePolling(channel chan cache.Reading, dvc *DeviceConfig) error {
+func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 	slog.Info("Modbus TCP polling started", "device", dvc.Name)
 	link := fmt.Sprintf("%s:%d", dvc.TCP.Host, dvc.TCP.Port)
 	handler := modbus.NewTCPClientHandler(link)
@@ -124,7 +123,7 @@ func TcpDevicePolling(channel chan cache.Reading, dvc *DeviceConfig) error {
 			// 		"value", floatVal)
 			// }
 
-			reading := cache.Reading{
+			reading := model.Reading{
 				ID:         0,
 				DeviceName: dvc.Name,
 				PointName:  point.Name,

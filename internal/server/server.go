@@ -1,7 +1,7 @@
 package server
 
 import (
-	"LEPG/internal/client/cache"
+	"LEPG/internal/model"
 	"LEPG/internal/msg"
 	"bytes"
 	"encoding/gob"
@@ -108,7 +108,7 @@ func HandleConnection(conn net.Conn, clients []ClientDef) {
 		if message.Type == msg.MsgTypeUpload {
 			dec := gob.NewDecoder(bytes.NewReader(message.Payload))
 			for {
-				var r cache.Reading
+				var r model.Reading
 				if err := dec.Decode(&r); err != nil {
 					break
 				}

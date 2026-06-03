@@ -3,6 +3,7 @@ package client
 import (
 	"LEPG/internal/client/cache"
 	"LEPG/internal/errors"
+	"LEPG/internal/model"
 	"LEPG/internal/msg"
 	"bytes"
 	"context"
@@ -28,7 +29,7 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 	}
 	defer store.Close()
 
-	ch := make(chan cache.Reading, cfg.BufferSize)
+	ch := make(chan model.Reading, cfg.BufferSize)
 	var mainWg sync.WaitGroup
 
 	// Goroutine 1: 轮询 → channel
@@ -63,8 +64,8 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 	return nil
 }
 
-func consumeAndWrite(ctx context.Context, ch <-chan cache.Reading, store cache.Store, batchSize int, maxInterval time.Duration) {
-	buffer := make([]*cache.Reading, 0, batchSize)
+func consumeAndWrite(ctx context.Context, ch <-chan model.Reading, store cache.Store, batchSize int, maxInterval time.Duration) {
+	buffer := make([]*model.Reading, 0, batchSize)
 	ticker := time.NewTicker(maxInterval)
 	defer ticker.Stop()
 
@@ -149,7 +150,7 @@ func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
 	}
 }
 
-func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, readings []*cache.Reading, maxPayloadSize int) error {
+func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, readings []*model.Reading, maxPayloadSize int) error {
 	i := 0
 	for i < len(readings) {
 		var payloadBuf bytes.Buffer

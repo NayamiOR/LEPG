@@ -5,28 +5,10 @@ import (
 	"context"
 )
 
-type Reading struct {
-	ID         int64 `bun:",pk,autoincrement"`
-	DeviceName string
-	PointName  string
-	DataType   model.DataType
-	BoolVal    bool
-	NumVal     float64
-	Unit       string
-	Timestamp  int64 `bun:",notnull"` // In milliseconds
-	DeviceHash string
-	/// Status:
-	/// 0 - Not Uploaded
-	/// 1 - Uploading
-	/// 2 - Uploaded
-	/// 3 - Failed
-	Status int
-}
-
 type Store interface {
-	SaveReadings(ctx context.Context, readings []*Reading) error
-	LoadReadings(ctx context.Context, limit int) ([]*Reading, error)
-	LoadPendingReadings(ctx context.Context, limit int) ([]*Reading, error)
+	SaveReadings(ctx context.Context, readings []*model.Reading) error
+	LoadReadings(ctx context.Context, limit int) ([]*model.Reading, error)
+	LoadPendingReadings(ctx context.Context, limit int) ([]*model.Reading, error)
 	UpdateReadingsStatus(ctx context.Context, ids []int64, status int) error
 	DeleteReadings(ctx context.Context, ids []int64) error
 	Close() error
