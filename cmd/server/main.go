@@ -3,6 +3,8 @@ package main
 import (
 	"LEPG/internal/config"
 	"LEPG/internal/server"
+	serverstore "LEPG/internal/server/cache"
+	"context"
 	"fmt"
 	"os"
 	"path/filepath"
@@ -50,7 +52,14 @@ var runCmd = &cobra.Command{
 				i+1, client.Sn, client.Token, client.Description)
 		}
 
-		if err := server.ReceiveLoop(cfg); err != nil {
+		store, err := serverstore.NewSQLiteStore(context.Background(), cfg.DataPath)
+		if err != nil {
+			fmt.Printf("Failed to create store: %v\n", err)
+			os.Exit(1)
+		}
+		defer store.Close()
+
+		if err := server.ReceiveLoop(cfg, store); err != nil {
 			fmt.Printf("Server error: %v\n", err)
 			os.Exit(1)
 		}

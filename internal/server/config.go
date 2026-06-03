@@ -15,6 +15,7 @@ func NewProviders(flagValues map[string]any, cfgFile string) *config.Providers {
 type ServerConfig struct {
 	Port     int
 	LogLevel string
+	DataPath string
 	Clients  []ClientDef
 }
 
@@ -36,6 +37,7 @@ func InitServerConfig(provider config.IProvider) (*ServerConfig, error) {
 	// 简单字段从 provider 获取（DefaultProvider 兜底）
 	cfg.Port = provider.GetInt("port")
 	cfg.LogLevel = provider.GetString("log_level")
+	cfg.DataPath = "/var/cache/lepgs/lepgs.db"
 
 	// 复杂嵌套结构通过类型断言获取 unmarshal 能力
 	if u, ok := provider.(config.IUnmarshaler); ok {

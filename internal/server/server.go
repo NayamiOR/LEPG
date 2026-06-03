@@ -3,7 +3,9 @@ package server
 import (
 	"LEPG/internal/model"
 	"LEPG/internal/msg"
+	"LEPG/internal/server/cache"
 	"bytes"
+	"context"
 	"encoding/gob"
 	"fmt"
 	"log/slog"
@@ -11,7 +13,7 @@ import (
 )
 
 // ReceiveLoop 接收循环
-func ReceiveLoop(cfg *ServerConfig) error {
+func ReceiveLoop(cfg *ServerConfig, s cache.Store) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
 		return err
@@ -27,11 +29,11 @@ func ReceiveLoop(cfg *ServerConfig) error {
 		}
 
 		slog.Info("accept a connection", "remote_addr", conn.RemoteAddr().String())
-		go HandleConnection(conn, cfg.Clients)
+		go HandleConnection(conn, cfg.Clients, s)
 	}
 }
 
-func HandleConnection(conn net.Conn, clients []ClientDef) {
+func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
@@ -106,20 +108,28 @@ func HandleConnection(conn net.Conn, clients []ClientDef) {
 			"payload_len", message.PayloadLen)
 
 		if message.Type == msg.MsgTypeUpload {
+			var readings []*model.Reading
 			dec := gob.NewDecoder(bytes.NewReader(message.Payload))
 			for {
 				var r model.Reading
 				if err := dec.Decode(&r); err != nil {
 					break
 				}
-				slog.Info("reading",
-					"id", r.ID,
-					"device", r.DeviceName,
-					"point", r.PointName,
-					"num_val", r.NumVal,
-					"bool_val", r.BoolVal,
-					"unit", r.Unit,
-					"timestamp", r.Timestamp)
+				readings = append(readings, &r)
+			}
+			if len(readings) > 0 {
+				if err := s.SaveReadings(context.Background(), hsPayload.Sn, readings); err != nil {
+					slog.Error("failed to save readings",
+						"remote_addr", remoteAddr,
+						"sn", hsPayload.Sn,
+						"count", len(readings),
+						"error", err)
+				} else {
+					slog.Info("saved readings",
+						"remote_addr", remoteAddr,
+						"sn", hsPayload.Sn,
+						"count", len(readings))
+				}
 			}
 		}
 	}
