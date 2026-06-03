@@ -5,7 +5,7 @@ import (
 	"LEPG/internal/errors"
 )
 
-const DefaultConfigFile = "config/server"
+const DefaultConfigFile = "/etc/lepgs/config.toml"
 
 // NewProviders 创建带有服务端默认值的配置提供者
 func NewProviders(flagValues map[string]any, cfgFile string) *config.Providers {

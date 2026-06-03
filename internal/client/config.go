@@ -18,15 +18,15 @@ func NewProviders(flagValues map[string]any, cfgFile string) *config.Providers {
 }
 
 type ClientConfig struct {
-	ServerUrl     string
-	Port          int
-	LogLevel      string
-	Sn            string
-	Token         string
-	MaxRetry      int
-	RetryInterval int
-	Devices       []*DeviceConfig
-	Paths         PathsConfig
+	ServerUrl       string
+	Port            int
+	LogLevel        string
+	Sn              string
+	Token           string
+	MaxRetry        int
+	RetryInterval   int
+	Devices         []*DeviceConfig
+	Paths           PathsConfig
 	BufferSize      int
 	UploadBatchSize int
 	UploadInterval  int
@@ -39,15 +39,15 @@ type PathsConfig struct {
 }
 
 var defaultClientValues = map[string]any{
-	"server":         "http://localhost",
-	"port":           8883,
-	"log_level":      "info",
-	"max_retry":      10,
-	"retry_interval": 5000,
-	"log_path":       "./logs/client.log",
-	"config_path":    "./config/config.toml",
-	"data_path":      "./data/data.db",
-	"buffer_size":      1000,
+	"server":            "http://localhost",
+	"port":              8883,
+	"log_level":         "info",
+	"max_retry":         10,
+	"retry_interval":    5000,
+	"log_path":          "./logs/client.log",
+	"config_path":       "/etc/lepgc/config.toml",
+	"data_path":         "./data/data.db",
+	"buffer_size":       1000,
 	"upload_batch_size": 100,
 	"upload_interval":   5000,
 }
