@@ -17,3 +17,7 @@ func NewTimestamp() Timestamp {
 func (t Timestamp) ToUnixMilli() int64 {
 	return int64(t) + CUSTOM_EPOCH
 }
+
+func FromUnixMilli(t int64) Timestamp {
+	return Timestamp((t - CUSTOM_EPOCH))
+}
