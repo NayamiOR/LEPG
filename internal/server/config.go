@@ -18,6 +18,13 @@ type ServerConfig struct {
 	DataPath string
 	Clients  []ClientDef
 	Mqtt     MqttConfig
+	Redis    RedisConfig
+}
+
+type RedisConfig struct {
+	Addr     string
+	Password string
+	DB       int
 }
 
 type MqttConfig struct {
@@ -32,10 +39,13 @@ type ClientDef struct {
 }
 
 var defaultServerValues = map[string]any{
-	"port":      8883,
-	"log_level": "info",
-	"mqtt_tcp":  "127.0.0.1:1883",
-	"mqtt_ws":   "127.0.0.1:8083",
+	"port":           8883,
+	"log_level":      "info",
+	"mqtt_tcp":       "127.0.0.1:1883",
+	"mqtt_ws":        "127.0.0.1:8083",
+	"redis_addr":     "127.0.0.1:6379",
+	"redis_password": "",
+	"redis_db":       0,
 }
 
 // InitServerConfig 初始化服务端配置
@@ -49,6 +59,11 @@ func InitServerConfig(provider config.IProvider) (*ServerConfig, error) {
 	cfg.Mqtt = MqttConfig{
 		TCPAddr: provider.GetString("mqtt_tcp"),
 		WSAddr:  provider.GetString("mqtt_ws"),
+	}
+	cfg.Redis = RedisConfig{
+		Addr:     provider.GetString("redis_addr"),
+		Password: provider.GetString("redis_password"),
+		DB:       provider.GetInt("redis_db"),
 	}
 
 	// 复杂嵌套结构通过类型断言获取 unmarshal 能力
