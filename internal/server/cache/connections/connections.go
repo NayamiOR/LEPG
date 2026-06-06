@@ -11,6 +11,7 @@ type Connection struct {
 	ClientIP      string
 	ConnectedAt   utils.Timestamp
 	LastHeartbeat utils.Timestamp
+	NodeAddr      string // 默认用pod ip，本机模式留空
 }
 
 type ConnectionManager interface {

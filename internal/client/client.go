@@ -18,11 +18,6 @@ import (
 func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 	slog.Info("Client configuration", "config", cfg)
 
-	if len(cfg.Devices) == 0 {
-		slog.Warn("No devices configured, client will run without Modbus polling")
-		return nil
-	}
-
 	store, err := cache.NewSQLiteStore(ctx, cfg.Paths.DataPath)
 	if err != nil {
 		return fmt.Errorf("create SQLite store: %w", err)
@@ -31,31 +26,51 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 
 	ch := make(chan model.Reading, cfg.BufferSize)
 	var mainWg sync.WaitGroup
+	var producerWg sync.WaitGroup
 
-	// Goroutine 1: 轮询 → channel
+	// Goroutine: MQTT broker + virtual devices
+	producerWg.Add(1)
 	mainWg.Go(func() {
-		slog.Info("Starting device polling")
-		var pollWg sync.WaitGroup
-		for _, device := range cfg.Devices {
-			slog.Info("Starting:", "device", device.Name, "type", device.Type)
-			pollWg.Go(func() {
-				if err := TcpDevicePolling(ch, device); err != nil {
-					slog.Error("Device polling failed", "device", device.Name, "error", err)
-				}
-			})
+		defer producerWg.Done()
+		slog.Info("Starting MQTT broker with virtual devices")
+		if err := StartMqttBroker(ctx, ch); err != nil {
+			slog.Error("MQTT broker failed", "error", err)
 		}
-		pollWg.Wait()
+	})
+
+	// Goroutine: Modbus polling (if configured)
+	if len(cfg.Devices) > 0 {
+		producerWg.Add(1)
+		mainWg.Go(func() {
+			defer producerWg.Done()
+			slog.Info("Starting device polling")
+			var pollWg sync.WaitGroup
+			for _, device := range cfg.Devices {
+				slog.Info("Starting:", "device", device.Name, "type", device.Type)
+				pollWg.Go(func() {
+					if err := TcpDevicePolling(ch, device); err != nil {
+						slog.Error("Device polling failed", "device", device.Name, "error", err)
+					}
+				})
+			}
+			pollWg.Wait()
+		})
+	}
+
+	// Close channel when all producers done
+	mainWg.Go(func() {
+		producerWg.Wait()
 		close(ch)
 	})
 
-	// Goroutine 2: channel → SQLite
+	// Goroutine: channel → SQLite
 	mainWg.Go(func() {
 		batchSize := 10
 		maxInterval := 30 * time.Second
 		consumeAndWrite(ctx, ch, store, batchSize, maxInterval)
 	})
 
-	// Goroutine 3: SQLite → 上传（占位）
+	// Goroutine: SQLite → upload
 	mainWg.Go(func() {
 		uploadLoop(ctx, cfg, store)
 	})

@@ -6,7 +6,9 @@ import (
 	"context"
 	"fmt"
 	"os"
+	"os/signal"
 	"path/filepath"
+	"syscall"
 
 	"github.com/spf13/cobra"
 )
@@ -48,7 +50,10 @@ var runCmd = &cobra.Command{
 
 		fmt.Printf("Client config: %+v\n", cfg)
 
-		if err := client.MainFunc(context.Background(), cfg); err != nil {
+		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
+		defer stop()
+
+		if err := client.MainFunc(ctx, cfg); err != nil {
 			fmt.Printf("Client error: %v\n", err)
 			os.Exit(1)
 		}

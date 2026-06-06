@@ -8,7 +8,7 @@ import (
 )
 
 type MemoryConnectionManager struct {
-	mu   sync.RWMutex
+	mu    sync.RWMutex
 	conns map[string]*Connection
 }
 
