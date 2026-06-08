@@ -124,7 +124,6 @@ func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 			// }
 
 			reading := model.Reading{
-				ID:         0,
 				DeviceName: dvc.Name,
 				PointName:  point.Name,
 				DataType:   point.DataType,
@@ -133,7 +132,6 @@ func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 				Unit:       point.Unit,
 				Timestamp:  time.Now().UnixMilli(),
 				DeviceHash: deviceHash,
-				Status:     0,
 			}
 
 			channel <- reading

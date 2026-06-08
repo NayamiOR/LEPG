@@ -127,3 +127,89 @@ access = "ro"
 #   unit = "V"
 #   access = "ro"
 #   cache_enabled = true
+
+# MQTT 虚拟设备配置
+# Python 模拟器 (scripts/mqtt_simulator.py) 连接此 broker 发布数据
+
+[mqtt]
+broker_addr = "127.0.0.1:1883"
+
+# 温湿度传感器
+[[mqtt.devices]]
+sn = "SENSOR-TH-001"
+name = "温湿度传感器"
+
+[[mqtt.devices.points]]
+name = "temperature"
+data_type = "float32"
+unit = "°C"
+
+# [[mqtt.devices.points]]
+# name = "humidity"
+# data_type = "float32"
+# unit = "%RH"
+
+# # 电表
+# [[mqtt.devices]]
+# sn = "METER-PWR-001"
+# name = "电表"
+
+# [[mqtt.devices.points]]
+# name = "voltage"
+# data_type = "float32"
+# unit = "V"
+
+# [[mqtt.devices.points]]
+# name = "current"
+# data_type = "float32"
+# unit = "A"
+
+# [[mqtt.devices.points]]
+# name = "power"
+# data_type = "float32"
+# unit = "kW"
+
+# [[mqtt.devices.points]]
+# name = "frequency"
+# data_type = "float32"
+# unit = "Hz"
+
+# # 压力变送器
+# [[mqtt.devices]]
+# sn = "SENSOR-PRS-001"
+# name = "压力变送器"
+
+# [[mqtt.devices.points]]
+# name = "pressure"
+# data_type = "float32"
+# unit = "MPa"
+
+# # 气体检测器
+# [[mqtt.devices]]
+# sn = "SENSOR-GAS-001"
+# name = "气体检测器"
+
+# [[mqtt.devices.points]]
+# name = "co2"
+# data_type = "uint16"
+# unit = "ppm"
+
+# [[mqtt.devices.points]]
+# name = "smoke_alarm"
+# data_type = "bool"
+# unit = ""
+
+# # 流量计
+# [[mqtt.devices]]
+# sn = "SENSOR-FLW-001"
+# name = "流量计"
+
+# [[mqtt.devices.points]]
+# name = "flow_rate"
+# data_type = "float32"
+# unit = "m³/h"
+
+# [[mqtt.devices.points]]
+# name = "total"
+# data_type = "uint32"
+# unit = "m³"

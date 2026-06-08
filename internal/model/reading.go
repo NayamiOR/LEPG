@@ -10,10 +10,4 @@ type Reading struct {
 	Unit       string
 	Timestamp  int64 `bun:",notnull"` // In milliseconds
 	DeviceHash string
-	/// Status:
-	/// 0 - Not Uploaded
-	/// 1 - Uploading
-	/// 2 - Uploaded
-	/// 3 - Failed
-	Status int
 }
