@@ -238,3 +238,16 @@ topic = "device/SENSOR-FLW-001/reading/total"
 qos = 1
 point_name = "total"
 unit = "m³"
+
+# 边缘网关(复杂JSON)
+[[mqtt.devices]]
+name = "边缘网关(复杂JSON)"
+client_id = "GW-JSON-001"
+keep_alive = "60s"
+offline_threshold = "30s"
+enable_monitor = true
+
+[[mqtt.devices.topics]]
+topic = "device/GW-JSON-001/reading/status_report"
+qos = 1
+point_name = "status_report"

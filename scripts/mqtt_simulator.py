@@ -181,6 +181,68 @@ class FlowMeter(SensorDevice):
         return int(self._total)
 
 
+class ComplexJsonDevice(SensorDevice):
+    """边缘网关 — 发布嵌套 JSON 聚合报文，测试 type=json 的复杂结构解析"""
+
+    def __init__(self):
+        super().__init__(
+            sn="GW-JSON-001",
+            name="边缘网关(复杂JSON)",
+            interval=5,
+            points=[Point("status_report", "json")],
+        )
+        self._uptime = 86400.0
+        self._energy = 125.6
+
+    def read_point(self, point, tick):
+        # 模拟两台电机，转速基于正弦波 + 噪声
+        motors = []
+        for i, (base_rpm, base_temp) in enumerate([(1500, 60), (1200, 55)]):
+            rpm = max(0, base_rpm * (0.5 + 0.5 * math.sin(tick * 0.04 + i * 1.5)) + random.gauss(0, 20))
+            temp = base_temp + (rpm / base_rpm) * 15 + random.gauss(0, 1.5)
+            status = "running" if rpm > 100 else "idle"
+            motors.append({
+                "id": f"motor-{i + 1}",
+                "status": status,
+                "rpm": round(rpm, 1),
+                "temperature": round(temp, 1),
+            })
+
+        # 整体状态：正常运行，低概率告警或故障
+        r = random.random()
+        if r < 0.03:
+            overall = "fault"
+        elif r < 0.10:
+            overall = "warning"
+        else:
+            overall = "running"
+
+        # 告警：偶发产生
+        alarms = []
+        if overall == "warning":
+            alarms.append({"code": "W001", "msg": "motor vibration above threshold", "level": "warning"})
+        if overall == "fault":
+            alarms.append({"code": "E001", "msg": "motor over-temperature detected", "level": "critical"})
+
+        # 累计指标
+        self._uptime += self.interval
+        self._energy += 0.1 + random.gauss(0, 0.02)
+
+        inner = {
+            "device_id": self.sn,
+            "overall_status": overall,
+            "sub_devices": motors,
+            "alarms": alarms,
+            "metrics": {
+                "uptime_seconds": int(self._uptime),
+                "energy_kwh": round(self._energy, 2),
+                "efficiency": round(0.85 + 0.10 * math.sin(tick * 0.02) + random.gauss(0, 0.01), 4),
+            },
+        }
+        # value 是 JSON 字符串（双重编码），匹配 Go 端 DataTypeJSON 的解析方式
+        return json.dumps(inner, ensure_ascii=False)
+
+
 # ---- 设备注册表 ----
 
 ALL_DEVICES = {
@@ -189,6 +251,7 @@ ALL_DEVICES = {
     "pressure": PressureSensor,
     "gas": GasDetector,
     "flow": FlowMeter,
+    "complex_json": ComplexJsonDevice,
 }
 
 
