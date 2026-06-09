@@ -5,11 +5,13 @@ import (
 	"LEPG/internal/config"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"os/signal"
 	"path/filepath"
 	"syscall"
 
+	"github.com/SladkyCitron/slogcolor"
 	"github.com/spf13/cobra"
 )
 
@@ -96,6 +98,7 @@ var initCmd = &cobra.Command{
 }
 
 func init() {
+	slog.SetDefault(slog.New(slogcolor.NewHandler(os.Stderr, slogcolor.DefaultOptions)))
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default is ./config/client.toml)")
 	runCmd.Flags().StringVarP(&flagServerUrl, "url", "u", "", "server URL (overrides config file)")
 	runCmd.Flags().IntVarP(&flagPort, "port", "p", 0, "server port (overrides config file)")

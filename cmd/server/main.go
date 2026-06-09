@@ -6,9 +6,11 @@ import (
 	serverstore "LEPG/internal/server/cache"
 	"context"
 	"fmt"
+	"log/slog"
 	"os"
 	"path/filepath"
 
+	"github.com/SladkyCitron/slogcolor"
 	"github.com/spf13/cobra"
 )
 
@@ -45,11 +47,15 @@ var runCmd = &cobra.Command{
 
 		fmt.Printf("Server config: %+v\n", cfg)
 
-		// 打印客户端列表
-		fmt.Printf("Loaded %d clients:\n", len(cfg.Clients))
-		for i, client := range cfg.Clients {
-			fmt.Printf("  [%d] SN: %s, Token: %s, Description: %s\n",
-				i+1, client.Sn, client.Token, client.Description)
+		if len(cfg.Clients) == 0 {
+			slog.Warn("No clients configured. Server will not receive any data.")
+		} else {
+			// 打印客户端列表
+			slog.Info("Loaded clients", "count", len(cfg.Clients))
+			for i, client := range cfg.Clients {
+				fmt.Printf("  [%d] SN: %s, Token: %s, Description: %s\n",
+					i+1, client.Sn, client.Token, client.Description)
+			}
 		}
 
 		store, err := serverstore.NewSQLiteStore(context.Background(), cfg.DataPath)
@@ -113,6 +119,7 @@ var initCmd = &cobra.Command{
 }
 
 func init() {
+	slog.SetDefault(slog.New(slogcolor.NewHandler(os.Stderr, slogcolor.DefaultOptions)))
 	rootCmd.PersistentFlags().StringVarP(&cfgFile, "config", "c", "", "config file path (default is ./config/server.toml)")
 	runCmd.Flags().IntVarP(&flagPort, "port", "p", 0, "server port (overrides config file)")
 
