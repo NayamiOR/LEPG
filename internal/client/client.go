@@ -80,7 +80,7 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 }
 
 func consumeAndWrite(ctx context.Context, ch <-chan model.Reading, store cache.Store, batchSize int, maxInterval time.Duration) {
-	buffer := make([]*model.Reading, 0, batchSize)
+	buffer := make([]*cache.CachedReading, 0, batchSize)
 	ticker := time.NewTicker(maxInterval)
 	defer ticker.Stop()
 
@@ -103,7 +103,7 @@ func consumeAndWrite(ctx context.Context, ch <-chan model.Reading, store cache.S
 				flush()
 				return
 			}
-			buffer = append(buffer, &r)
+			buffer = append(buffer, &cache.CachedReading{Reading: r, Status: cache.UploadNotSent})
 			if len(buffer) >= batchSize {
 				flush()
 			}
@@ -165,7 +165,7 @@ func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
 	}
 }
 
-func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, readings []*model.Reading, maxPayloadSize int) error {
+func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, readings []*cache.CachedReading, maxPayloadSize int) error {
 	i := 0
 	for i < len(readings) {
 		var payloadBuf bytes.Buffer
@@ -174,13 +174,13 @@ func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, readi
 
 		for i < len(readings) {
 			prevLen := payloadBuf.Len()
-			if err := enc.Encode(readings[i]); err != nil {
+			if err := enc.Encode(readings[i].Reading); err != nil {
 				return fmt.Errorf("gob encode reading %d: %w", readings[i].ID, err)
 			}
 			if payloadBuf.Len() > maxPayloadSize {
 				if prevLen == 0 {
 					slog.Warn("Single reading exceeds max payload size, skipping", "id", readings[i].ID)
-					store.UpdateReadingsStatus(ctx, []int64{readings[i].ID}, 3)
+					store.UpdateReadingsStatus(ctx, []int64{readings[i].ID}, cache.UploadFailed)
 					i++
 					payloadBuf.Reset()
 					continue
@@ -196,23 +196,23 @@ func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, readi
 			continue
 		}
 
-		if err := store.UpdateReadingsStatus(ctx, batchIDs, 1); err != nil {
+		if err := store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadSending); err != nil {
 			return fmt.Errorf("mark readings as uploading: %w", err)
 		}
 
 		uploadMsg := msg.New(msg.MsgTypeUpload, payloadBuf.Bytes())
 		encoded, err := uploadMsg.Encode()
 		if err != nil {
-			store.UpdateReadingsStatus(ctx, batchIDs, 3)
+			store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadFailed)
 			return fmt.Errorf("encode upload message: %w", err)
 		}
 
 		if _, err := conn.Write(encoded); err != nil {
-			store.UpdateReadingsStatus(ctx, batchIDs, 3)
+			store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadFailed)
 			return fmt.Errorf("write upload message: %w", err)
 		}
 
-		if err := store.UpdateReadingsStatus(ctx, batchIDs, 2); err != nil {
+		if err := store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadSent); err != nil {
 			slog.Error("Failed to mark readings as uploaded", "error", err)
 		}
 

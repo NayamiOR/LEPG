@@ -7,25 +7,26 @@ import (
 )
 
 type StoredReading struct {
-	ID         int64  `bun:",pk,autoincrement"`
-	Sn         string // 来源网关
-	UploadTime int64  `bun:",notnull"` // 服务端收到时间(ms)
+	ID         int64          `bun:",pk,autoincrement"`
+	Sn         string         // 来源网关
+	UploadTime int64          `bun:",notnull"` // 服务端收到时间(ms)
+	Device     string         `bun:",notnull"`
 	DeviceName string
+	Point      string         `bun:",notnull"`
 	PointName  string
-	DataType   model.DataType
-	BoolVal    bool
-	NumVal     float64
+	DataType   model.DataType `bun:",notnull"`
+	Value      string         `bun:",notnull"`
+	Quality    model.Quality  `bun:",notnull"`
 	Unit       string
-	Timestamp  int64 `bun:",notnull"` // 采集时间(ms)
-	DeviceHash string
+	Timestamp  int64          `bun:",notnull"` // 采集时间(ms)
 }
 
 type QueryFilter struct {
-	Sn         string
-	DeviceName string
-	StartTime  int64 // ms, 0 = no filter
-	EndTime    int64 // ms, 0 = no filter
-	Limit      int   // 0 = default 1000
+	Sn        string
+	Device    string
+	StartTime int64 // ms, 0 = no filter
+	EndTime   int64 // ms, 0 = no filter
+	Limit     int   // 0 = default 1000
 }
 
 type Store interface {

@@ -65,14 +65,15 @@ func (s *SQLiteStore) SaveReadings(ctx context.Context, sn string, readings []*m
 		stored[i] = &StoredReading{
 			Sn:         sn,
 			UploadTime: now,
+			Device:     r.Device,
 			DeviceName: r.DeviceName,
+			Point:      r.Point,
 			PointName:  r.PointName,
 			DataType:   r.DataType,
-			BoolVal:    r.BoolVal,
-			NumVal:     r.NumVal,
+			Value:      r.Value,
+			Quality:    r.Quality,
 			Unit:       r.Unit,
 			Timestamp:  r.Timestamp,
-			DeviceHash: r.DeviceHash,
 		}
 	}
 	_, err := s.db.NewInsert().Model(&stored).Exec(ctx)
@@ -90,8 +91,8 @@ func (s *SQLiteStore) QueryReadings(ctx context.Context, filter QueryFilter) ([]
 	if filter.Sn != "" {
 		q = q.Where("sn = ?", filter.Sn)
 	}
-	if filter.DeviceName != "" {
-		q = q.Where("device_name = ?", filter.DeviceName)
+	if filter.Device != "" {
+		q = q.Where("device = ?", filter.Device)
 	}
 	if filter.StartTime > 0 {
 		q = q.Where("timestamp >= ?", filter.StartTime)

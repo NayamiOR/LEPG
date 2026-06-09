@@ -13,14 +13,15 @@ func init() {
 	Migrations.MustRegister(func(ctx context.Context, db *bun.DB) error {
 		_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS readings (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			device VARCHAR(16) NOT NULL,
 			device_name VARCHAR,
+			point VARCHAR(16) NOT NULL,
 			point_name VARCHAR,
-			data_type VARCHAR,
-			bool_val BOOLEAN,
-			num_val DOUBLE,
+			data_type VARCHAR NOT NULL,
+			value TEXT NOT NULL,
+			quality INTEGER NOT NULL DEFAULT 0,
 			unit VARCHAR,
 			timestamp BIGINT NOT NULL,
-			device_hash VARCHAR,
 			status INTEGER DEFAULT 0
 		)`)
 		return err

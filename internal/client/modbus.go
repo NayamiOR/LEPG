@@ -124,14 +124,15 @@ func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 			// }
 
 			reading := model.Reading{
+				Device:     deviceHash,
 				DeviceName: dvc.Name,
+				Point:      model.HashPoint(dvc.Name, point.Name),
 				PointName:  point.Name,
 				DataType:   point.DataType,
-				NumVal:     floatVal,
-				BoolVal:    boolVal,
+				Value:      model.SerializeValue(point.DataType, floatVal, boolVal),
+				Quality:    model.QualityGood,
 				Unit:       point.Unit,
 				Timestamp:  time.Now().UnixMilli(),
-				DeviceHash: deviceHash,
 			}
 
 			channel <- reading
