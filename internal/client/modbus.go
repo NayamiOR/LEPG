@@ -1,6 +1,7 @@
 package client
 
 import (
+	"context"
 	"encoding/binary"
 	"fmt"
 	"log/slog"
@@ -12,7 +13,7 @@ import (
 	"github.com/goburrow/modbus"
 )
 
-func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
+func TcpDevicePolling(ctx context.Context, channel chan model.Reading, dvc *DeviceConfig) error {
 	slog.Info("Modbus TCP polling started", "device", dvc.Name)
 	link := fmt.Sprintf("%s:%d", dvc.TCP.Host, dvc.TCP.Port)
 	handler := modbus.NewTCPClientHandler(link)
@@ -43,7 +44,14 @@ func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 
 	ticker := time.NewTicker(pollInterval)
 	defer ticker.Stop()
-	for range ticker.C {
+	for {
+		select {
+		case <-ctx.Done():
+			slog.Info("Modbus TCP polling stopped", "device", dvc.Name)
+			return nil
+		case <-ticker.C:
+		}
+
 		for _, point := range dvc.Points {
 			// slog.Info("Polling point", "point", point.Name, "function_code", point.FunctionCode)
 			var results []byte
@@ -66,23 +74,22 @@ func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 				continue
 			}
 
-			var floatVal float64
-			var boolVal bool
+			var value any
 			originalResults := make([]byte, len(results))
 			copy(originalResults, results) // 保存原始结果以供调试
 
 			// TODO: 检查纠正解析逻辑
 			switch point.DataType {
 			case model.DataTypeBool:
-				boolVal = results[0] != 0
+				value = results[0] != 0
 			case model.DataTypeInt16:
-				floatVal = float64(int16(results[0])<<8 | int16(results[1]))
+				value = float64(int16(results[0])<<8 | int16(results[1]))
 			case model.DataTypeUint16:
-				floatVal = float64(uint16(results[0])<<8 | uint16(results[1]))
+				value = float64(uint16(results[0])<<8 | uint16(results[1]))
 			case model.DataTypeInt32:
-				floatVal = float64(int32(results[0])<<24 | int32(results[1])<<16 | int32(results[2])<<8 | int32(results[3]))
+				value = float64(int32(results[0])<<24 | int32(results[1])<<16 | int32(results[2])<<8 | int32(results[3]))
 			case model.DataTypeUint32:
-				floatVal = float64(uint32(results[0])<<24 | uint32(results[1])<<16 | uint32(results[2])<<8 | uint32(results[3]))
+				value = float64(uint32(results[0])<<24 | uint32(results[1])<<16 | uint32(results[2])<<8 | uint32(results[3]))
 			case model.DataTypeFloat32:
 				// Convert 4 bytes to IEEE 754 float32
 				if len(results) < 4 {
@@ -98,30 +105,21 @@ func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 
 				// Convert bytes to uint32 then to float32 using IEEE 754
 				bits := binary.BigEndian.Uint32(converted)
-				floatVal = float64(math.Float32frombits(bits))
-				slog.Debug("Float32 final value", "point", point.Name, "bits", bits, "value", floatVal)
+				value = float64(math.Float32frombits(bits))
+				slog.Debug("Float32 final value", "point", point.Name, "bits", bits, "value", value)
 			}
 
 			// Apply scale and offset for numeric types only
 			if point.DataType != model.DataTypeBool {
-				floatVal = floatVal*point.Scale + point.Offset
+				value = float64(value.(float64))*point.Scale + point.Offset
 			}
 
 			// Log based on data type
-			slog.Info("Captured!")
-			// if point.DataType == model.DataTypeBool {
-			// 	slog.Info("Modbus TCP point polling success",
-			// 		"point", point.Name,
-			// 		"type", point.DataType,
-			// 		"value", boolVal)
-			// } else {
-			// 	slog.Info("Modbus TCP point polling success",
-			// 		"point", point.Name,
-			// 		"type", point.DataType,
-			// 		"unit", point.Unit,
-			// 		"origin", originalResults,
-			// 		"value", floatVal)
-			// }
+			slog.Info("Modbus TCP reading",
+				"point", point.Name,
+				"type", point.DataType,
+				"unit", point.Unit,
+				"value", value)
 
 			reading := model.Reading{
 				Device:     deviceHash,
@@ -129,7 +127,7 @@ func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 				Point:      model.HashPoint(dvc.Name, point.Name),
 				PointName:  point.Name,
 				DataType:   point.DataType,
-				Value:      model.SerializeValue(point.DataType, floatVal, boolVal),
+				Value:      model.SerializeValue(point.DataType, value),
 				Quality:    model.QualityGood,
 				Unit:       point.Unit,
 				Timestamp:  time.Now().UnixMilli(),
@@ -138,7 +136,4 @@ func TcpDevicePolling(channel chan model.Reading, dvc *DeviceConfig) error {
 			channel <- reading
 		}
 	}
-	slog.Info("For died")
-
-	return nil
 }

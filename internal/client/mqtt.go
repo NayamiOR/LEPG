@@ -72,16 +72,6 @@ func handleMqttReading(topic string, payload []byte, ch chan<- model.Reading, ro
 		return
 	}
 
-	var numVal float64
-	var boolVal bool
-
-	switch v := r.Value.(type) {
-	case float64:
-		numVal = v
-	case bool:
-		boolVal = v
-	}
-
 	quality := model.QualityGood
 	if r.Quality > 0 {
 		quality = model.Quality(r.Quality)
@@ -95,7 +85,7 @@ func handleMqttReading(topic string, payload []byte, ch chan<- model.Reading, ro
 		Point:      model.HashPoint(route.deviceName, route.topicCfg.PointName),
 		PointName:  route.topicCfg.PointName,
 		DataType:   dt,
-		Value:      model.SerializeValue(dt, numVal, boolVal),
+		Value:      model.SerializeValue(dt, r.Value),
 		Quality:    quality,
 		Unit:       route.topicCfg.Unit,
 		Timestamp:  r.TS,

@@ -19,6 +19,8 @@ const (
 	DataTypeInt32   DataType = "int32"   // 32-bit signed integer (2 registers)
 	DataTypeUint32  DataType = "uint32"  // 32-bit unsigned integer (2 registers)
 	DataTypeFloat32 DataType = "float32" // 32-bit float (2 registers, IEEE 754)
+	DataTypeFloat64 DataType = "float64" // 64-bit float (4 registers, IEEE 754)
+	DataTypeJSON    DataType = "json"
 )
 
 // ByteOrder defines the byte order for multi-register data types
