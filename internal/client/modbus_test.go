@@ -4,6 +4,7 @@ package client
 
 import (
 	"LEPG/internal/model"
+	"context"
 	"encoding/binary"
 	"fmt"
 	"math"
@@ -84,7 +85,7 @@ func TestMain(m *testing.M) {
 	os.Exit(exitCode)
 }
 
-func TestTcpDevicePolling_Integration_Connection(t *testing.T) {
+func TestModbusDevicePolling_Integration_Connection(t *testing.T) {
 	device := &DeviceConfig{
 		Name:         "test-device",
 		Type:         model.ConnectionTypeTCP,
@@ -95,7 +96,7 @@ func TestTcpDevicePolling_Integration_Connection(t *testing.T) {
 			Host: "127.0.0.1",
 			Port: 5020,
 		},
-		Points: []*PointConfig{
+		Points: []*ModbusPointConfig{
 			{
 				Name:         "temperature",
 				FunctionCode: 3,
@@ -106,23 +107,26 @@ func TestTcpDevicePolling_Integration_Connection(t *testing.T) {
 	}
 
 	// Run polling in goroutine
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	ch := make(chan model.Reading, 10)
 	done := make(chan error, 1)
 	go func() {
-		done <- TcpDevicePolling(device)
+		done <- ModbusDevicePolling(ctx, ch, device)
 	}()
 
 	// Wait for multiple polling cycles to complete
 	select {
-	case <-time.After(12 * time.Second):
+	case <-ctx.Done():
 		t.Log("Polling completed multiple cycles successfully")
 	case err := <-done:
 		if err != nil {
-			t.Fatalf("TcpDevicePolling failed: %v", err)
+			t.Fatalf("ModbusDevicePolling failed: %v", err)
 		}
 	}
 }
 
-func TestTcpDevicePolling_Integration_FC3_HoldingRegisters(t *testing.T) {
+func TestModbusDevicePolling_Integration_FC3_HoldingRegisters(t *testing.T) {
 	device := &DeviceConfig{
 		Name:         "test-fc3",
 		Type:         model.ConnectionTypeTCP,
@@ -133,7 +137,7 @@ func TestTcpDevicePolling_Integration_FC3_HoldingRegisters(t *testing.T) {
 			Host: "127.0.0.1",
 			Port: 5020,
 		},
-		Points: []*PointConfig{
+		Points: []*ModbusPointConfig{
 			{
 				Name:         "temperature",
 				FunctionCode: 3, // Read Holding Registers
@@ -143,13 +147,16 @@ func TestTcpDevicePolling_Integration_FC3_HoldingRegisters(t *testing.T) {
 		},
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	ch := make(chan model.Reading, 10)
 	done := make(chan error, 1)
 	go func() {
-		done <- TcpDevicePolling(device)
+		done <- ModbusDevicePolling(ctx, ch, device)
 	}()
 
 	select {
-	case <-time.After(12 * time.Second):
+	case <-ctx.Done():
 		t.Log("FC3 polling completed multiple cycles successfully")
 	case err := <-done:
 		if err != nil {
@@ -158,7 +165,7 @@ func TestTcpDevicePolling_Integration_FC3_HoldingRegisters(t *testing.T) {
 	}
 }
 
-func TestTcpDevicePolling_Integration_FC4_InputRegisters(t *testing.T) {
+func TestModbusDevicePolling_Integration_FC4_InputRegisters(t *testing.T) {
 	device := &DeviceConfig{
 		Name:         "test-fc4",
 		Type:         model.ConnectionTypeTCP,
@@ -169,7 +176,7 @@ func TestTcpDevicePolling_Integration_FC4_InputRegisters(t *testing.T) {
 			Host: "127.0.0.1",
 			Port: 5020,
 		},
-		Points: []*PointConfig{
+		Points: []*ModbusPointConfig{
 			{
 				Name:         "input-registers",
 				FunctionCode: 4, // Read Input Registers
@@ -179,13 +186,16 @@ func TestTcpDevicePolling_Integration_FC4_InputRegisters(t *testing.T) {
 		},
 	}
 
+	ctx, cancel := context.WithTimeout(context.Background(), 12*time.Second)
+	defer cancel()
+	ch := make(chan model.Reading, 10)
 	done := make(chan error, 1)
 	go func() {
-		done <- TcpDevicePolling(device)
+		done <- ModbusDevicePolling(ctx, ch, device)
 	}()
 
 	select {
-	case <-time.After(12 * time.Second):
+	case <-ctx.Done():
 		t.Log("FC4 polling completed multiple cycles successfully")
 	case err := <-done:
 		if err != nil {

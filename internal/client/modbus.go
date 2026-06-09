@@ -13,15 +13,46 @@ import (
 	"github.com/goburrow/modbus"
 )
 
-func TcpDevicePolling(ctx context.Context, channel chan model.Reading, dvc *DeviceConfig) error {
-	slog.Info("Modbus TCP polling started", "device", dvc.Name)
-	link := fmt.Sprintf("%s:%d", dvc.TCP.Host, dvc.TCP.Port)
-	handler := modbus.NewTCPClientHandler(link)
-	handler.SlaveId = dvc.SlaveID
-	handler.Timeout = dvc.Timeout
+// connectableHandler extends modbus.ClientHandler with Connect/Close for lifecycle management.
+// Both TCPClientHandler and RTUClientHandler satisfy this interface.
+type connectableHandler interface {
+	modbus.ClientHandler
+	Connect() error
+	Close() error
+}
+
+// createHandler creates a Modbus client handler based on device connection type.
+func createHandler(dvc *DeviceConfig) (connectableHandler, error) {
+	switch dvc.Type {
+	case model.ConnectionTypeTCP:
+		link := fmt.Sprintf("%s:%d", dvc.TCP.Host, dvc.TCP.Port)
+		handler := modbus.NewTCPClientHandler(link)
+		handler.SlaveId = dvc.SlaveID
+		handler.Timeout = dvc.Timeout
+		return handler, nil
+	case model.ConnectionTypeRTU:
+		handler := modbus.NewRTUClientHandler(dvc.RTU.Port)
+		handler.SlaveId = dvc.SlaveID
+		handler.Timeout = dvc.Timeout
+		handler.BaudRate = dvc.RTU.BaudRate
+		handler.DataBits = dvc.RTU.DataBits
+		handler.StopBits = dvc.RTU.StopBits
+		handler.Parity = dvc.RTU.Parity
+		return handler, nil
+	default:
+		return nil, fmt.Errorf("unsupported connection type: %s", dvc.Type)
+	}
+}
+
+func ModbusDevicePolling(ctx context.Context, channel chan model.Reading, dvc *DeviceConfig) error {
+	slog.Info("Modbus polling started", "device", dvc.Name, "type", dvc.Type)
+
+	handler, err := createHandler(dvc)
+	if err != nil {
+		return err
+	}
 
 	deviceHash, err := dvc.Hash()
-
 	if err != nil {
 		return err
 	}
@@ -29,16 +60,16 @@ func TcpDevicePolling(ctx context.Context, channel chan model.Reading, dvc *Devi
 	// Create Modbus client
 	client := modbus.NewClient(handler)
 
-	// Connect to TCP server
+	// Connect
 	err = handler.Connect()
 	if err != nil {
 		return err
 	}
 	defer handler.Close()
 
-	slog.Info("Modbus TCP connected",
-		"address", link,
-		"slave_id", handler.SlaveId)
+	slog.Info("Modbus connected",
+		"type", dvc.Type,
+		"slave_id", dvc.SlaveID)
 
 	pollInterval := dvc.PollInterval
 

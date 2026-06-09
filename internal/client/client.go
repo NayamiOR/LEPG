@@ -57,7 +57,7 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 			for _, device := range cfg.Devices {
 				slog.Info("Starting:", "device", device.Name, "type", device.Type)
 				pollWg.Go(func() {
-					if err := TcpDevicePolling(ctx, ch, device); err != nil {
+					if err := ModbusDevicePolling(ctx, ch, device); err != nil {
 						slog.Error("Device polling failed", "device", device.Name, "error", err)
 					}
 				})
