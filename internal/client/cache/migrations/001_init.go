@@ -11,7 +11,7 @@ var Migrations = migrate.NewMigrations()
 
 func init() {
 	Migrations.MustRegister(func(ctx context.Context, db *bun.DB) error {
-		_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS readings (
+		_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS cached_readings (
 			id INTEGER PRIMARY KEY AUTOINCREMENT,
 			device VARCHAR(16) NOT NULL,
 			device_name VARCHAR,

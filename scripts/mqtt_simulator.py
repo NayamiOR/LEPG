@@ -24,7 +24,7 @@ from abc import ABC, abstractmethod
 import paho.mqtt.client as mqtt
 
 BROKER_DEFAULT = "127.0.0.1:1883"
-TOPIC_READING = "device/{}/reading"
+TOPIC_READING = "device/{}/reading/{}"
 TOPIC_STATUS = "device/{}/status"
 QOS_READING = 0
 QOS_STATUS = 1
@@ -33,10 +33,9 @@ QOS_STATUS = 1
 class Point:
     """单个采集点定义"""
 
-    def __init__(self, name, data_type, unit):
+    def __init__(self, name, data_type):
         self.name = name
         self.data_type = data_type
-        self.unit = unit
 
 
 class SensorDevice(ABC):
@@ -54,20 +53,22 @@ class SensorDevice(ABC):
         """返回单个采集点的当前值"""
         ...
 
-    def generate_readings(self):
+    def publish_readings(self, client):
+        """逐点采集并独立发布到各自的 topic"""
         self.tick += 1
-        ts = int(time.time() * 1000)
-        return [
-            {
-                "device_name": self.sn,
-                "point_name": p.name,
-                "data_type": p.data_type,
+        for p in self.points:
+            ts = int(time.time() * 1000)
+            payload = json.dumps({
+                "type": p.data_type,
                 "value": self.read_point(p, self.tick),
-                "unit": p.unit,
-                "timestamp": ts,
-            }
-            for p in self.points
-        ]
+                "quality": 0,
+                "ts": ts,
+            }, ensure_ascii=False)
+            topic = TOPIC_READING.format(self.sn, p.name)
+            result = client.publish(topic, payload, qos=QOS_READING)
+            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+                return False
+        return True
 
 
 # ---- 具体设备实现 ----
@@ -82,8 +83,8 @@ class TempHumSensor(SensorDevice):
             name="温湿度传感器",
             interval=2,
             points=[
-                Point("temperature", "float32", "°C"),
-                Point("humidity", "float32", "%RH"),
+                Point("temperature", "float32"),
+                Point("humidity", "float32"),
             ],
         )
 
@@ -102,10 +103,10 @@ class PowerMeter(SensorDevice):
             name="电表",
             interval=1,
             points=[
-                Point("voltage", "float32", "V"),
-                Point("current", "float32", "A"),
-                Point("power", "float32", "kW"),
-                Point("frequency", "float32", "Hz"),
+                Point("voltage", "float32"),
+                Point("current", "float32"),
+                Point("power", "float32"),
+                Point("frequency", "float32"),
             ],
         )
 
@@ -128,7 +129,7 @@ class PressureSensor(SensorDevice):
             sn="SENSOR-PRS-001",
             name="压力变送器",
             interval=3,
-            points=[Point("pressure", "float32", "MPa")],
+            points=[Point("pressure", "float32")],
         )
 
     def read_point(self, point, tick):
@@ -146,8 +147,8 @@ class GasDetector(SensorDevice):
             name="气体检测器",
             interval=5,
             points=[
-                Point("co2", "uint16", "ppm"),
-                Point("smoke_alarm", "bool", ""),
+                Point("co2", "uint16"),
+                Point("smoke_alarm", "bool"),
             ],
         )
 
@@ -166,8 +167,8 @@ class FlowMeter(SensorDevice):
             name="流量计",
             interval=2,
             points=[
-                Point("flow_rate", "float32", "m³/h"),
-                Point("total", "uint32", "m³"),
+                Point("flow_rate", "float32"),
+                Point("total", "uint32"),
             ],
         )
         self._total = 12456.0
@@ -209,7 +210,6 @@ def connect_with_retry(client, device_sn, broker_host, broker_port, stop):
 def run_device(device: SensorDevice, broker_host: str, broker_port: int, stop: threading.Event):
     """单设备采集 + 发布循环，支持断线重连"""
     status_topic = TOPIC_STATUS.format(device.sn)
-    reading_topic = TOPIC_READING.format(device.sn)
 
     while not stop.is_set():
         client = mqtt.Client(mqtt.CallbackAPIVersion.VERSION2, client_id=device.sn)
@@ -233,10 +233,7 @@ def run_device(device: SensorDevice, broker_host: str, broker_port: int, stop: t
         client.on_disconnect = on_disconnect
 
         while not stop.is_set() and not disconnected.is_set():
-            readings = device.generate_readings()
-            payload = json.dumps(readings, ensure_ascii=False)
-            result = client.publish(reading_topic, payload, qos=QOS_READING)
-            if result.rc != mqtt.MQTT_ERR_SUCCESS:
+            if not device.publish_readings(client):
                 break
             stop.wait(device.interval)
 

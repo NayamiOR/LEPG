@@ -18,6 +18,13 @@ import (
 func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 	slog.Info("Client configuration", "config", cfg)
 
+	if len(cfg.Devices) > 0 {
+		fmt.Print(formatDeviceList(cfg.Devices))
+	}
+	if cfg.Mqtt != nil && len(cfg.Mqtt.Devices) > 0 {
+		fmt.Print(formatMqttDeviceList(cfg.Mqtt.BrokerAddr, cfg.Mqtt.Devices))
+	}
+
 	store, err := cache.NewSQLiteStore(ctx, cfg.Paths.DataPath)
 	if err != nil {
 		return fmt.Errorf("create SQLite store: %w", err)
@@ -28,15 +35,17 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 	var mainWg sync.WaitGroup
 	var producerWg sync.WaitGroup
 
-	// Goroutine: MQTT broker + virtual devices
-	producerWg.Add(1)
-	mainWg.Go(func() {
-		defer producerWg.Done()
-		slog.Info("Starting MQTT broker with virtual devices")
-		if err := StartMqttBroker(ctx, ch); err != nil {
-			slog.Error("MQTT broker failed", "error", err)
-		}
-	})
+	// Goroutine: MQTT broker (if configured)
+	if cfg.Mqtt != nil {
+		producerWg.Add(1)
+		mainWg.Go(func() {
+			defer producerWg.Done()
+			slog.Info("Starting MQTT broker")
+			if err := StartMqttBroker(ctx, ch, cfg.Mqtt); err != nil {
+				slog.Error("MQTT broker failed", "error", err)
+			}
+		})
+	}
 
 	// Goroutine: Modbus polling (if configured)
 	if len(cfg.Devices) > 0 {

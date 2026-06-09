@@ -7,6 +7,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
+	"strings"
 	"time"
 )
 
@@ -30,6 +31,7 @@ type ClientConfig struct {
 	BufferSize      int
 	UploadBatchSize int
 	UploadInterval  int
+	Mqtt            *MqttConfig
 }
 
 type PathsConfig struct {
@@ -50,6 +52,7 @@ var defaultClientValues = map[string]any{
 	"buffer_size":       1000,
 	"upload_batch_size": 100,
 	"upload_interval":   5000,
+	"mqtt.broker_addr":  "127.0.0.1:1883",
 }
 
 // InitClientConfig 初始化客户端配置
@@ -99,6 +102,22 @@ func InitClientConfig(provider config.IProvider) (*ClientConfig, error) {
 				return nil, fmt.Errorf("duplicate device name: %s", d.Name)
 			}
 			seen[d.Name] = true
+		}
+	}
+
+	// MQTT broker + virtual device definitions
+	if u, ok := provider.(config.IUnmarshaler); ok {
+		var mqttWrapper struct {
+			Mqtt *MqttConfig `mapstructure:"mqtt"`
+		}
+		if err := u.Unmarshal(&mqttWrapper); err != nil {
+			return nil, errors.Wrap(err, "failed to unmarshal mqtt config")
+		}
+		if mqttWrapper.Mqtt != nil {
+			if err := mqttWrapper.Mqtt.Validate(); err != nil {
+				return nil, fmt.Errorf("mqtt config validation failed: %w", err)
+			}
+			cfg.Mqtt = mqttWrapper.Mqtt
 		}
 	}
 
@@ -171,8 +190,8 @@ type TcpSlaveConfig struct {
 	Port int    `toml:"port" mapstructure:"port"` // Port number (default 502)
 }
 
-// PointConfig defines a single data point on a Modbus device
-type PointConfig struct {
+// ModbusPointConfig defines a single data point on a Modbus device
+type ModbusPointConfig struct {
 	Name         string           `toml:"name" mapstructure:"name"`                   // Point identifier (JSON field name)
 	FunctionCode int              `toml:"function_code" mapstructure:"function_code"` // Modbus function code (1/2/3/4/5/6/16)
 	Address      uint16           `toml:"address" mapstructure:"address"`             // Register starting address (decimal)
@@ -186,6 +205,14 @@ type PointConfig struct {
 	// NOTE：目前Access没有用到
 	// NOTE：目前CacheEnabled没有用到
 	CacheEnabled bool `toml:"cache_enabled" mapstructure:"cache_enabled"` // Enable local caching for resume (default true)
+}
+
+type TopicConfig struct {
+	Topic     string `toml:"topic" mapstructure:"topic"`
+	QoS       byte   `toml:"qos" mapstructure:"qos"`
+	PointName string `toml:"point_name" mapstructure:"point_name"`
+	Unit      string `toml:"unit" mapstructure:"unit"`
+	Retain    bool   `toml:"retain" mapstructure:"retain"`
 }
 
 // DeviceConfig defines a Modbus device configuration
@@ -206,8 +233,8 @@ type DeviceConfig struct {
 	SlaveID byte `toml:"slave_id" mapstructure:"slave_id"` // Modbus slave address (required for RTU, usually 1 for TCP)
 
 	// Data points
-	Points       []*PointConfig `toml:"points" mapstructure:"points"`               // List of data points to read/write
-	PollInterval time.Duration  `toml:"poll_interval" mapstructure:"poll_interval"` // Polling interval (e.g., "10s")
+	Points       []*ModbusPointConfig `toml:"points" mapstructure:"points"`               // List of data points to read/write
+	PollInterval time.Duration        `toml:"poll_interval" mapstructure:"poll_interval"` // Polling interval (e.g., "10s")
 }
 
 // Validate checks if the device configuration is valid
@@ -270,7 +297,7 @@ func (d *DeviceConfig) Hash() (string, error) {
 }
 
 // Validate checks if the point configuration is valid
-func (p *PointConfig) Validate() error {
+func (p *ModbusPointConfig) Validate() error {
 	if p.Name == "" {
 		return &ValidationError{Field: "name", Message: "point name cannot be empty"}
 	}
@@ -370,3 +397,164 @@ func (e *ValidationError) Error() string {
 }
 
 /// END: MODBUS CONFIGURATION STRUCTS
+
+/// START: MQTT CONFIGURATION STRUCTS
+
+type MQTTDeviceConfig struct {
+	Name             string         `toml:"name" mapstructure:"name"`
+	ClientID         string         `toml:"client_id" mapstructure:"client_id"`
+	Username         string         `toml:"username" mapstructure:"username"`
+	Password         string         `toml:"password" mapstructure:"password"`
+	KeepAlive        time.Duration  `toml:"keep_alive" mapstructure:"keep_alive"`
+	CleanSession     bool           `toml:"clean_session" mapstructure:"clean_session"`
+	OfflineThreshold time.Duration  `toml:"offline_threshold" mapstructure:"offline_threshold"`
+	EnableMonitor    bool           `toml:"enable_monitor" mapstructure:"enable_monitor"`
+	Topics           []*TopicConfig `toml:"topics" mapstructure:"topics"`
+}
+
+func (d *MQTTDeviceConfig) Validate() error {
+	if d.Name == "" {
+		return &ValidationError{Field: "name", Message: "cannot be empty"}
+	}
+	if len(d.Topics) == 0 {
+		return &ValidationError{Field: "topics", Message: "at least one topic required"}
+	}
+	seen := make(map[string]bool, len(d.Topics))
+	for i, t := range d.Topics {
+		if err := t.Validate(); err != nil {
+			return fmt.Errorf("topics[%d]: %w", i, err)
+		}
+		if seen[t.Topic] {
+			return &ValidationError{Field: "topics", Message: fmt.Sprintf("duplicate topic: %s", t.Topic)}
+		}
+		seen[t.Topic] = true
+	}
+	return nil
+}
+
+func (t *TopicConfig) Validate() error {
+	if t.Topic == "" {
+		return &ValidationError{Field: "topic", Message: "cannot be empty"}
+	}
+	if t.PointName == "" {
+		return &ValidationError{Field: "point_name", Message: "cannot be empty"}
+	}
+	if t.QoS > 2 {
+		return &ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
+	}
+	return nil
+}
+
+type MqttConfig struct {
+	BrokerAddr string               `toml:"broker_addr" mapstructure:"broker_addr"`
+	Devices    []*MQTTDeviceConfig `toml:"devices" mapstructure:"devices"`
+}
+
+func (m *MqttConfig) Validate() error {
+	if m.BrokerAddr == "" {
+		return &ValidationError{Field: "mqtt.broker_addr", Message: "cannot be empty"}
+	}
+	if len(m.Devices) == 0 {
+		return &ValidationError{Field: "mqtt.devices", Message: "at least one device required when mqtt is configured"}
+	}
+	seen := make(map[string]bool, len(m.Devices))
+	for i, d := range m.Devices {
+		if err := d.Validate(); err != nil {
+			return fmt.Errorf("mqtt.devices[%d]: %w", i, err)
+		}
+		if seen[d.Name] {
+			return &ValidationError{Field: "mqtt.devices", Message: fmt.Sprintf("duplicate device name: %s", d.Name)}
+		}
+		seen[d.Name] = true
+	}
+	return nil
+}
+
+/// END: MQTT CONFIGURATION STRUCTS
+
+/// START: DEVICE LIST FORMATTING
+
+func formatDeviceList(devices []*DeviceConfig) string {
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "[Modbus Devices] (%d devices)\n", len(devices))
+	for i, d := range devices {
+		buf.WriteString(formatModbusDevice(i+1, d))
+	}
+	return buf.String()
+}
+
+func formatModbusDevice(idx int, d *DeviceConfig) string {
+	var buf strings.Builder
+
+	var conn string
+	switch d.Type {
+	case model.ConnectionTypeTCP:
+		conn = fmt.Sprintf("tcp %s:%d", d.TCP.Host, d.TCP.Port)
+	case model.ConnectionTypeRTU:
+		conn = fmt.Sprintf("rtu %s:%d-%d%s%d", d.RTU.Port, d.RTU.BaudRate, d.RTU.DataBits, d.RTU.Parity, d.RTU.StopBits)
+	}
+
+	fmt.Fprintf(&buf, " #%-2d %-15s | %-25s | slave=%-3d | poll=%-5s | timeout=%-5s | offline=%-5s | monitor=%v\n",
+		idx, `"`+d.Name+`"`, conn, d.SlaveID,
+		durShort(d.PollInterval), durShort(d.Timeout), durShort(d.OfflineThreshold), d.EnableMonitor)
+
+	for j, p := range d.Points {
+		prefix := "    ├─ "
+		if j == len(d.Points)-1 {
+			prefix = "    └─ "
+		}
+		bo := string(p.ByteOrder)
+		if bo == "" {
+			bo = "-"
+		}
+		fmt.Fprintf(&buf, "%s%-14s fc=%02d addr=%-4d qty=%-2d %-8s %-5s scale=%-6g off=%-6g unit=%-4s %s\n",
+			prefix, p.Name, p.FunctionCode, p.Address, p.Quantity,
+			p.DataType, bo, p.Scale, p.Offset, p.Unit, p.Access)
+	}
+
+	return buf.String()
+}
+
+func formatMqttDeviceList(brokerAddr string, devices []*MQTTDeviceConfig) string {
+	var buf strings.Builder
+	fmt.Fprintf(&buf, "[MQTT Devices] (%d devices, broker=%s)\n", len(devices), brokerAddr)
+	for i, d := range devices {
+		buf.WriteString(formatMqttDevice(i+1, d))
+	}
+	return buf.String()
+}
+
+func formatMqttDevice(idx int, d *MQTTDeviceConfig) string {
+	var buf strings.Builder
+
+	fmt.Fprintf(&buf, " #%-2d %-15s | client=%-10s | user=%-10s | keepalive=%-5s | clean=%-5v | offline=%-5s | monitor=%v\n",
+		idx, `"`+d.Name+`"`, d.ClientID, d.Username,
+		durShort(d.KeepAlive), d.CleanSession, durShort(d.OfflineThreshold), d.EnableMonitor)
+
+	for j, t := range d.Topics {
+		prefix := "    ├─ "
+		if j == len(d.Topics)-1 {
+			prefix = "    └─ "
+		}
+		fmt.Fprintf(&buf, "%s%-20s qos=%-2d point=%-16s unit=%-6s retain=%v\n",
+			prefix, t.Topic, t.QoS, t.PointName, t.Unit, t.Retain)
+	}
+
+	return buf.String()
+}
+
+// durShort returns a short duration string (e.g. "10s", "5ms", "1m30s").
+func durShort(d time.Duration) string {
+	if d == 0 {
+		return "0"
+	}
+	if d%time.Minute == 0 {
+		return fmt.Sprintf("%dm", d/time.Minute)
+	}
+	if d%time.Second == 0 {
+		return fmt.Sprintf("%ds", d/time.Second)
+	}
+	return d.Truncate(time.Millisecond).String()
+}
+
+/// END: DEVICE LIST FORMATTING
