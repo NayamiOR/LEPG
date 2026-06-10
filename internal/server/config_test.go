@@ -6,9 +6,13 @@ import (
 
 func validServerConfig() *ServerConfig {
 	return &ServerConfig{
-		Port:     8883,
-		LogLevel: "info",
-		DataPath: "/var/cache/lepgs/lepgs.db",
+		Port:          8883,
+		LogLevel:      "info",
+		LogPath:       "logs/",
+		DataPath:      "/var/cache/lepgs/lepgs.db",
+		LogMaxSize:    10,
+		LogMaxBackups: 3,
+		LogMaxAge:     28,
 	}
 }
 

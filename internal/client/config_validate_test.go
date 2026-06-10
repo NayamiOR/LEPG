@@ -17,7 +17,11 @@ func validClientConfig() *ClientConfig {
 		UploadBatchSize: 100,
 		UploadInterval:  5000,
 		Paths: PathsConfig{
-			DataPath: "./data/data.db",
+			LogPath:       "logs/",
+			DataPath:      "./data/data.db",
+			LogMaxSize:    10,
+			LogMaxBackups: 3,
+			LogMaxAge:     28,
 		},
 	}
 }

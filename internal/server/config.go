@@ -23,7 +23,12 @@ func newServerMetaConfig() *ServerMetaConfig {
 type ServerConfig struct {
 	Port     int    `config:"port"      default:"8883"                    sources:"file,flag,env,default"`
 	LogLevel string `config:"log_level" default:"info"                    sources:"file,env,default"`
+	LogPath  string `config:"log_path"  default:"logs/"                   sources:"file,env,default"`
 	DataPath string `config:"data_path" default:"/var/cache/lepgs/lepgs.db" sources:"file,env,default"`
+
+	LogMaxSize    int `config:"log_max_size"    default:"10" sources:"file,env,default"`
+	LogMaxBackups int `config:"log_max_backups" default:"3"  sources:"file,env,default"`
+	LogMaxAge     int `config:"log_max_age"     default:"28" sources:"file,env,default"`
 
 	Mqtt  MqttConfig  // 子结构体，PopulateFromProvider 递归填充
 	Redis RedisConfig // 同上

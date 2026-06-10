@@ -54,8 +54,11 @@ type ClientConfig struct {
 
 // PathsConfig 文件路径配置
 type PathsConfig struct {
-	LogPath  string `config:"log_path"  default:"./logs/client.log" sources:"file,env,default"`
-	DataPath string `config:"data_path" default:"./data/data.db"   sources:"file,env,default"`
+	LogPath       string `config:"log_path"        default:"logs/"            sources:"file,env,default"`
+	DataPath      string `config:"data_path"       default:"./data/data.db"   sources:"file,env,default"`
+	LogMaxSize    int    `config:"log_max_size"    default:"10"               sources:"file,env,default"`
+	LogMaxBackups int    `config:"log_max_backups" default:"3"                sources:"file,env,default"`
+	LogMaxAge     int    `config:"log_max_age"     default:"28"               sources:"file,env,default"`
 }
 
 // InitClientConfig 初始化客户端配置

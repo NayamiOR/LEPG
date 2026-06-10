@@ -2,6 +2,7 @@ package main
 
 import (
 	"LEPG/internal/config"
+	logging "LEPG/internal/log"
 	"LEPG/internal/server"
 	serverstore "LEPG/internal/server/cache"
 	"context"
@@ -46,6 +47,19 @@ var runCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Server config: %+v\n", cfg)
+
+		// 配置持久化日志（控制台 + 文件双输出）
+		if err := logging.Setup(logging.Config{
+			Level:      cfg.LogLevel,
+			Path:       cfg.LogPath,
+			MaxSize:    cfg.LogMaxSize,
+			MaxBackups: cfg.LogMaxBackups,
+			MaxAge:     cfg.LogMaxAge,
+			AppName:    "lepgs",
+		}); err != nil {
+			fmt.Printf("Failed to setup logging: %v\n", err)
+			os.Exit(1)
+		}
 
 		if len(cfg.Clients) == 0 {
 			slog.Warn("No clients configured. Server will not receive any data.")

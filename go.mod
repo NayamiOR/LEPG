@@ -13,6 +13,7 @@ require (
 	github.com/uptrace/bun/dialect/sqlitedialect v1.2.18
 	github.com/uptrace/bun/driver/sqliteshim v1.2.18
 	github.com/wind-c/comqtt/v2 v2.6.4
+	gopkg.in/natefinch/lumberjack.v2 v2.2.1
 )
 
 require (

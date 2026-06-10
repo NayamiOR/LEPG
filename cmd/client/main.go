@@ -3,6 +3,7 @@ package main
 import (
 	"LEPG/internal/client"
 	"LEPG/internal/config"
+	logging "LEPG/internal/log"
 	"context"
 	"fmt"
 	"log/slog"
@@ -51,6 +52,19 @@ var runCmd = &cobra.Command{
 		}
 
 		fmt.Printf("Client config: %+v\n", cfg)
+
+		// 配置持久化日志（控制台 + 文件双输出）
+		if err := logging.Setup(logging.Config{
+			Level:      cfg.LogLevel,
+			Path:       cfg.Paths.LogPath,
+			MaxSize:    cfg.Paths.LogMaxSize,
+			MaxBackups: cfg.Paths.LogMaxBackups,
+			MaxAge:     cfg.Paths.LogMaxAge,
+			AppName:    "lepgc",
+		}); err != nil {
+			fmt.Printf("Failed to setup logging: %v\n", err)
+			os.Exit(1)
+		}
 
 		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
 		defer stop()
