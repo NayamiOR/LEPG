@@ -40,6 +40,10 @@ simmodbus:
 simmqtt:
 	go run $(call FixPath, ./cmd/mqtt-sim)
 
+.PHONY: sim
+sim:
+	$(MAKE) -j2 simmodbus simmqtt
+
 clean:
 	$(RM) $(call FixPath,$(BIN_DIR)/*)
 
