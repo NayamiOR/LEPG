@@ -35,10 +35,10 @@ c: run-client
 s: run-server
 
 simmodbus:
-	python scripts/modbus_simulator.py
+	go run $(call FixPath, ./cmd/modbus-sim)
 
 simmqtt:
-	python scripts/mqtt_simulator.py
+	go run $(call FixPath, ./cmd/mqtt-sim)
 
 clean:
 	$(RM) $(call FixPath,$(BIN_DIR)/*)
