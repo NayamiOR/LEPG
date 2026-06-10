@@ -11,72 +11,59 @@ import (
 	"time"
 )
 
-const DefaultConfigFile = "config/client"
+// ClientMetaConfig 元设置：控制 provider 链构建和 initCmd 行为。
+// MetaConfig 在 provider 链构建之前即已确定，且其值在后续填充业务配置过程中不再变更。
+type ClientMetaConfig struct {
+	SearchPath string // 运行时默认搜索路径
+	InitPath   string // initCmd 写入目标
+}
+
+func newClientMetaConfig() *ClientMetaConfig {
+	return &ClientMetaConfig{
+		SearchPath: "config/client.toml",
+		InitPath:   "/etc/lepgc/config.toml",
+	}
+}
 
 // NewProviders 创建带有客户端默认值的配置提供者
 func NewProviders(flagValues map[string]any, cfgFile string) *config.Providers {
-	return config.NewProviders(flagValues, cfgFile, DefaultConfigFile, defaultClientValues)
+	meta := newClientMetaConfig()
+	defaults := config.ExtractDefaults(&ClientConfig{})
+	return config.NewProviders(flagValues, cfgFile, meta.SearchPath, defaults)
 }
 
+// ClientConfig 业务设置：由 provider 链解析
 type ClientConfig struct {
-	ServerUrl       string
-	Port            int
-	LogLevel        string
-	Sn              string
-	Token           string
-	MaxRetry        int
-	RetryInterval   int
-	Devices         []*DeviceConfig
-	Paths           PathsConfig
-	BufferSize      int
-	UploadBatchSize int
-	UploadInterval  int
-	Mqtt            *MqttConfig
+	ServerUrl       string `config:"server"            default:"http://localhost" sources:"file,flag,env,default"`
+	Port            int    `config:"port"              default:"8883"             sources:"file,flag,env,default"`
+	LogLevel        string `config:"log_level"         default:"info"             sources:"file,env,default"`
+	Sn              string `config:"sn"                                           sources:"file,env"` // 凭据，禁止 flag
+	Token           string `config:"token"                                        sources:"file,env"` // 凭据，禁止 flag
+	MaxRetry        int    `config:"max_retry"         default:"10"               sources:"file,env,default"`
+	RetryInterval   int    `config:"retry_interval"    default:"5000"              sources:"file,env,default"`
+	BufferSize      int    `config:"buffer_size"       default:"1000"              sources:"file,env,default"`
+	UploadBatchSize int    `config:"upload_batch_size" default:"100"               sources:"file,env,default"`
+	UploadInterval  int    `config:"upload_interval"   default:"5000"              sources:"file,env,default"`
+
+	Paths PathsConfig // 子结构体，递归填充
+
+	// Unmarshal 字段 — 无 sources tag，由 IUnmarshaler 填充
+	Devices []*DeviceConfig
+	Mqtt    *MqttConfig
 }
 
+// PathsConfig 文件路径配置
 type PathsConfig struct {
-	LogPath    string
-	ConfigPath string
-	DataPath   string
-}
-
-var defaultClientValues = map[string]any{
-	"server":            "http://localhost",
-	"port":              8883,
-	"log_level":         "info",
-	"max_retry":         10,
-	"retry_interval":    5000,
-	"log_path":          "./logs/client.log",
-	"config_path":       "/etc/lepgc/config.toml",
-	"data_path":         "./data/data.db",
-	"buffer_size":       1000,
-	"upload_batch_size": 100,
-	"upload_interval":   5000,
-	"mqtt.broker_addr":  "127.0.0.1:1883",
+	LogPath  string `config:"log_path"  default:"./logs/client.log" sources:"file,env,default"`
+	DataPath string `config:"data_path" default:"./data/data.db"   sources:"file,env,default"`
 }
 
 // InitClientConfig 初始化客户端配置
 func InitClientConfig(provider config.IProvider) (*ClientConfig, error) {
 	cfg := &ClientConfig{}
-
-	cfg.ServerUrl = provider.GetString("server")
-	cfg.Port = provider.GetInt("port")
-	cfg.LogLevel = provider.GetString("log_level")
-	cfg.Sn = provider.GetString("sn")
-	cfg.Token = provider.GetString("token")
-	cfg.MaxRetry = provider.GetInt("max_retry")
-	cfg.RetryInterval = provider.GetInt("retry_interval")
-	cfg.BufferSize = provider.GetInt("buffer_size")
-	cfg.UploadBatchSize = provider.GetInt("upload_batch_size")
-	cfg.UploadInterval = provider.GetInt("upload_interval")
-
-	Paths := PathsConfig{
-		LogPath:    provider.GetString("log_path"),
-		ConfigPath: provider.GetString("config_path"),
-		DataPath:   provider.GetString("data_path"),
+	if err := config.PopulateFromProvider(cfg, provider); err != nil {
+		return nil, err
 	}
-
-	cfg.Paths = Paths
 
 	// 复杂嵌套结构通过类型断言获取 unmarshal 能力
 	if u, ok := provider.(config.IUnmarshaler); ok {
@@ -145,6 +132,15 @@ func (c *ClientConfig) Validate() error {
 		errs = append(errs, errors.NewConfigNotSetError(missing))
 	}
 
+	if c.Port <= 0 || c.Port > 65535 {
+		errs = append(errs, errors.NewConfigInvalidError("port", "must be 1-65535"))
+	}
+
+	validLevels := map[string]bool{"debug": true, "info": true, "warn": true, "error": true}
+	if !validLevels[c.LogLevel] {
+		errs = append(errs, errors.NewConfigInvalidError("log_level", "must be debug/info/warn/error"))
+	}
+
 	if c.MaxRetry < 0 {
 		errs = append(errs, errors.NewConfigInvalidError("max_retry", "must be non-negative"))
 	}
@@ -162,15 +158,22 @@ func (c *ClientConfig) Validate() error {
 		errs = append(errs, errors.NewConfigInvalidError("upload_interval", "must be positive"))
 	}
 
+	if c.Paths.DataPath == "" {
+		errs = append(errs, errors.NewConfigInvalidError("data_path", "cannot be empty"))
+	}
+
 	if len(errs) > 0 {
 		return errors.NewConfigValidationErrors(errs)
 	}
 	return nil
 }
 
-// GetDefaultValues 返回客户端默认配置值
+// GetDefaultValues 返回客户端默认配置值，供 initCmd 使用
 func GetDefaultValues() map[string]any {
-	return defaultClientValues
+	meta := newClientMetaConfig()
+	defaults := config.ExtractDefaults(&ClientConfig{})
+	defaults["config_path"] = meta.InitPath
+	return defaults
 }
 
 /// START: MODBUS CONFIGURATION STRUCTS

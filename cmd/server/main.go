@@ -97,7 +97,7 @@ var initCmd = &cobra.Command{
 	Long:  `Initialize LEPG`,
 	Run: func(cmd *cobra.Command, args []string) {
 		defaults := server.GetDefaultValues()
-		filename := "config/server.toml"
+		filename := defaults["config_path"].(string)
 		if cfgFile != "" {
 			filename = cfgFile
 		}
