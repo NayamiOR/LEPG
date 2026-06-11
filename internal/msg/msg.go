@@ -34,10 +34,13 @@ var globalIDGen = &atomicIdGenerator{}
 
 // 消息类型常量
 const (
-	MsgTypeHandshake uint8 = 0x01 // 握手消息
-	MsgTypeUpload    uint8 = 0x02 // 上传数据消息
-	MsgTypeHeartbeat uint8 = 0x03 // 心跳消息
-	MsgTypeError     uint8 = 0x04 // 错误消息
+	MsgTypeHandshake     uint8 = 0x01 // 握手消息
+	MsgTypeHandshakeAck  uint8 = 0x02 // 握手ACK
+	MsgTypeUpload        uint8 = 0x03 // 上传数据消息
+	MsgTypeUploadAck     uint8 = 0x04 // 上传ACK
+	MsgTypeHeartbeat     uint8 = 0x05 // 心跳消息
+	MsgTypeHeartbeatAck  uint8 = 0x06 // 心跳ACK
+	MsgTypeNotify        uint8 = 0x07 // 消息通知
 )
 
 // Flags 常量
@@ -380,15 +383,36 @@ func NewHeartbeatPacket(payload []byte) *HeartbeatPacket {
 	return &HeartbeatPacket{Payload: payload}
 }
 
-type ErrorPacket struct {
+type NotifyPacket struct {
 	Payload []byte
 }
 
-func (p *ErrorPacket) Encode() ([]byte, error) { return p.Payload, nil }
-func (p *ErrorPacket) Type() uint8             { return MsgTypeError }
-func NewErrorPacket(payload []byte) *ErrorPacket {
-	return &ErrorPacket{Payload: payload}
+func (p *NotifyPacket) Encode() ([]byte, error) { return p.Payload, nil }
+func (p *NotifyPacket) Type() uint8             { return MsgTypeNotify }
+func NewNotifyPacket(payload []byte) *NotifyPacket {
+	return &NotifyPacket{Payload: payload}
 }
+
+type HandshakeAckPacket struct {
+	Ack *AckPayload
+}
+
+func (p *HandshakeAckPacket) Encode() ([]byte, error) { return p.Ack.Encode() }
+func (p *HandshakeAckPacket) Type() uint8              { return MsgTypeHandshakeAck }
+
+type UploadAckPacket struct {
+	Ack *AckPayload
+}
+
+func (p *UploadAckPacket) Encode() ([]byte, error) { return p.Ack.Encode() }
+func (p *UploadAckPacket) Type() uint8              { return MsgTypeUploadAck }
+
+type HeartbeatAckPacket struct {
+	Ack *AckPayload
+}
+
+func (p *HeartbeatAckPacket) Encode() ([]byte, error) { return p.Ack.Encode() }
+func (p *HeartbeatAckPacket) Type() uint8              { return MsgTypeHeartbeatAck }
 
 func init() {
 	RegisterPacketType(MsgTypeHandshake, func(m *Msg) (Packable, error) {
@@ -420,10 +444,40 @@ func init() {
 		}
 		return &HeartbeatPacket{Payload: m.Payload}, nil
 	})
-	RegisterPacketType(MsgTypeError, func(m *Msg) (Packable, error) {
+	RegisterPacketType(MsgTypeNotify, func(m *Msg) (Packable, error) {
 		if m == nil {
 			return nil, nil
 		}
-		return &ErrorPacket{Payload: m.Payload}, nil
+		return &NotifyPacket{Payload: m.Payload}, nil
+	})
+	RegisterPacketType(MsgTypeHandshakeAck, func(m *Msg) (Packable, error) {
+		if m == nil {
+			return nil, nil
+		}
+		ack, err := DecodeAckPayload(m.Payload)
+		if err != nil {
+			return nil, err
+		}
+		return &HandshakeAckPacket{Ack: ack}, nil
+	})
+	RegisterPacketType(MsgTypeUploadAck, func(m *Msg) (Packable, error) {
+		if m == nil {
+			return nil, nil
+		}
+		ack, err := DecodeAckPayload(m.Payload)
+		if err != nil {
+			return nil, err
+		}
+		return &UploadAckPacket{Ack: ack}, nil
+	})
+	RegisterPacketType(MsgTypeHeartbeatAck, func(m *Msg) (Packable, error) {
+		if m == nil {
+			return nil, nil
+		}
+		ack, err := DecodeAckPayload(m.Payload)
+		if err != nil {
+			return nil, err
+		}
+		return &HeartbeatAckPacket{Ack: ack}, nil
 	})
 }

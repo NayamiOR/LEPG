@@ -101,3 +101,49 @@ func DecodeHandshakeResponsePayload(data []byte) (*HandshakeResponsePayload, err
 		Message: message,
 	}, nil
 }
+
+// --- AckPayload (通用ACK响应载荷) ---
+// Wire format: [Code:1B][MsgLen:1B][Msg:nB]
+
+type AckPayload struct {
+	Code    uint8
+	Message string
+}
+
+const (
+	AckOK     uint8 = 0x00
+	AckFailed uint8 = 0x01
+)
+
+func (p *AckPayload) Encode() ([]byte, error) {
+	buf := make([]byte, 0, 1+1+len(p.Message))
+	buf = append(buf, p.Code)
+	buf = append(buf, byte(len(p.Message)))
+	buf = append(buf, []byte(p.Message)...)
+	return buf, nil
+}
+
+func DecodeAckPayload(data []byte) (*AckPayload, error) {
+	if len(data) < 1 {
+		return nil, fmt.Errorf("ack payload too short")
+	}
+	offset := 0
+	code := data[offset]
+	offset++
+
+	if offset >= len(data) {
+		return &AckPayload{Code: code, Message: ""}, nil
+	}
+	msgLen := int(data[offset])
+	offset++
+
+	if offset+msgLen > len(data) {
+		return nil, fmt.Errorf("invalid ack message length: %d", msgLen)
+	}
+	message := string(data[offset : offset+msgLen])
+
+	return &AckPayload{
+		Code:    code,
+		Message: message,
+	}, nil
+}

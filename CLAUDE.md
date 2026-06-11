@@ -83,10 +83,12 @@ The system uses a custom TLV (Type-Length-Value) protocol over TCP:
 
 Message types:
 - `0x01`: Handshake
-- `0x02`: Authentication  
-- `0x03`: Heartbeat
-- `0x04`: Error
-- `0x05`: Data upload
+- `0x02`: HandshakeAck
+- `0x03`: Upload
+- `0x04`: UploadAck
+- `0x05`: Heartbeat
+- `0x06`: HeartbeatAck
+- `0x07`: Notify
 
 Key components:
 - `internal/msg/msg.go`: Message encoding/decoding with TLV format
