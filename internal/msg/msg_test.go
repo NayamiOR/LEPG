@@ -1,9 +1,16 @@
 package msg
 
 import (
-	"LEPG/internal/model"
+	"bytes"
+	stderrors "errors"
+	"io"
+	"net"
 	"reflect"
 	"testing"
+
+	"LEPG/internal/errors"
+	"LEPG/internal/model"
+	"LEPG/internal/utils"
 )
 
 func TestNewMsg(t *testing.T) {
@@ -276,5 +283,127 @@ func TestParseMsgUnknownType(t *testing.T) {
 	m := &Msg{Type: 99, Payload: []byte{}}
 	if _, err := ParseMsg(m); err == nil {
 		t.Fatal("expected error for unknown packet type, got nil")
+	}
+}
+
+// decodeFrameFromBytes 把字节经 net.Pipe 喂给 DecodeFrame。
+// 所有调用方都会恰好消费完写入字节，writer 的 Write/Close 都能完成，不会泄漏 goroutine。
+func decodeFrameFromBytes(t *testing.T, data []byte) (Msg, error) {
+	t.Helper()
+	a, b := net.Pipe()
+	go func() {
+		a.Write(data)
+		a.Close()
+	}()
+	got, err := DecodeFrame(b)
+	b.Close()
+	return got, err
+}
+
+func TestMsgFrameRoundTrip(t *testing.T) {
+	tests := []struct {
+		name string
+		msg  Msg
+	}{
+		{
+			name: "with payload",
+			msg: Msg{
+				Magic: MagicNumber, Version: 2, Flags: 0x0F, Type: MsgTypeUpload,
+				MsgID: 4660, PayloadLen: 5, Timestamp: 123456,
+				Payload: []byte{1, 2, 3, 4, 5},
+			},
+		},
+		{
+			name: "nil payload",
+			msg: Msg{
+				Magic: MagicNumber, Version: 1, Flags: 0, Type: MsgTypeHeartbeat,
+				MsgID: 1, PayloadLen: 0, Timestamp: 99,
+				Payload: nil,
+			},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			original := tt.msg
+			original.Checksum = utils.CalChecksum(original.headerAndPayload())
+
+			encoded, err := original.Encode()
+			if err != nil {
+				t.Fatalf("Encode failed: %v", err)
+			}
+			got, err := decodeFrameFromBytes(t, encoded)
+			if err != nil {
+				t.Fatalf("DecodeFrame failed: %v", err)
+			}
+			if got.Magic != original.Magic || got.Version != original.Version ||
+				got.Flags != original.Flags || got.Type != original.Type ||
+				got.MsgID != original.MsgID || got.PayloadLen != original.PayloadLen ||
+				got.Timestamp != original.Timestamp || got.Checksum != original.Checksum {
+				t.Errorf("header round-trip mismatch\ngot:  %+v\nwant: %+v", got, original)
+			}
+			if !bytes.Equal(got.Payload, original.Payload) {
+				t.Errorf("payload mismatch\ngot:  %v\nwant: %v", got.Payload, original.Payload)
+			}
+		})
+	}
+}
+
+func TestDecodeFrameChecksumMismatch(t *testing.T) {
+	msg := Msg{
+		Magic: MagicNumber, Version: 1, Type: MsgTypeUpload, MsgID: 1,
+		Payload: []byte{1, 2, 3, 4, 5},
+	}
+	msg.Checksum = utils.CalChecksum(msg.headerAndPayload())
+
+	encoded, err := msg.Encode()
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+	encoded[HeaderSize] ^= 0xFF // 篡改 payload 首字节，checksum 字段不变
+
+	_, err = decodeFrameFromBytes(t, encoded)
+	if !stderrors.Is(err, errors.ErrChecksumMismatch) {
+		t.Errorf("expected ErrChecksumMismatch, got %v", err)
+	}
+}
+
+func TestDecodeFrameTruncated(t *testing.T) {
+	// 合法 magic 但缺后续字段 → magic 通过、version 读触发 io.EOF
+	_, err := decodeFrameFromBytes(t, []byte{0x4E, 0x59})
+	if err == nil {
+		t.Fatal("expected error on truncated frame, got nil")
+	}
+	if !stderrors.Is(err, io.EOF) && !stderrors.Is(err, io.ErrUnexpectedEOF) {
+		t.Errorf("expected io.EOF or io.ErrUnexpectedEOF, got %v", err)
+	}
+}
+
+func TestDecodeFrameInvalidMagic(t *testing.T) {
+	msg := Msg{
+		Magic: MagicNumber, Version: 1, Type: MsgTypeUpload, MsgID: 1,
+		Payload: []byte{1, 2, 3},
+	}
+	msg.Checksum = utils.CalChecksum(msg.headerAndPayload())
+
+	encoded, err := msg.Encode()
+	if err != nil {
+		t.Fatalf("Encode failed: %v", err)
+	}
+	encoded[0] = 0x00 // 破坏 magic
+
+	_, err = decodeFrameFromBytes(t, encoded)
+	if !stderrors.Is(err, errors.ErrInvalidMagic) {
+		t.Errorf("expected ErrInvalidMagic, got %v", err)
+	}
+}
+
+func TestChecksumCoversHeader(t *testing.T) {
+	// 两个 Msg 仅在头部字段 Type 上不同；若 checksum 覆盖头部，二者 checksum 必须不同。
+	m1 := &Msg{Magic: MagicNumber, Version: 1, Type: MsgTypeUpload, Payload: []byte("x")}
+	m2 := &Msg{Magic: MagicNumber, Version: 1, Type: MsgTypeHeartbeat, Payload: []byte("x")}
+	m1.Checksum = utils.CalChecksum(m1.headerAndPayload())
+	m2.Checksum = utils.CalChecksum(m2.headerAndPayload())
+	if m1.Checksum == m2.Checksum {
+		t.Fatal("checksum must differ when a header field differs")
 	}
 }

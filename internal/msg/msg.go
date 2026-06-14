@@ -114,8 +114,8 @@ func (f *MsgFactory) NewMsg(t uint8, packet Packable) (*Msg, error) {
 		PayloadLen: uint16(len(payload)),
 		Timestamp:  utils.NewTimestamp(),
 		Payload:    payload,
-		Checksum:   utils.CalChecksum(payload),
 	}
+	msg.Checksum = utils.CalChecksum(msg.headerAndPayload())
 
 	return msg, nil
 }
@@ -151,10 +151,11 @@ func ParseMsg(m *Msg) (Packable, error) {
 	return ctor(m)
 }
 
-func (m *Msg) Encode() ([]byte, error) {
+// headerAndPayload 序列化固定头部字段与 payload，即 checksum 的覆盖范围。
+func (m *Msg) headerAndPayload() []byte {
 	buf := new(bytes.Buffer)
 
-	// Write fixed-size fields
+	// Fixed-size header fields
 	binary.Write(buf, binary.BigEndian, m.Magic)
 	binary.Write(buf, binary.BigEndian, m.Version)
 	binary.Write(buf, binary.BigEndian, m.Flags)
@@ -163,12 +164,21 @@ func (m *Msg) Encode() ([]byte, error) {
 	binary.Write(buf, binary.BigEndian, m.PayloadLen)
 	binary.Write(buf, binary.BigEndian, m.Timestamp)
 
-	// Write payload if present
+	// Payload if present
 	if m.Payload != nil {
 		buf.Write(m.Payload)
 	}
 
-	// Write checksum
+	return buf.Bytes()
+}
+
+func (m *Msg) Encode() ([]byte, error) {
+	buf := new(bytes.Buffer)
+
+	// Header + payload
+	buf.Write(m.headerAndPayload())
+
+	// Checksum
 	binary.Write(buf, binary.BigEndian, m.Checksum)
 
 	return buf.Bytes(), nil
@@ -182,6 +192,9 @@ func DecodeFrame(conn net.Conn) (Msg, error) {
 	_, err := io.ReadFull(conn, magicBuf)
 	if err != nil {
 		return m, err
+	}
+	if binary.BigEndian.Uint16(magicBuf) != MagicNumber {
+		return m, errors.ErrInvalidMagic
 	}
 	versionBuf := make([]byte, VersionSize)
 	_, err = io.ReadFull(conn, versionBuf)
@@ -239,8 +252,8 @@ func DecodeFrame(conn net.Conn) (Msg, error) {
 	m.Payload = payloadBuf
 	m.Checksum = binary.BigEndian.Uint16(checksumBuf)
 
-	// Calculate checksum and verify
-	checksum := utils.CalChecksum(m.Payload)
+	// Calculate checksum over header + payload and verify
+	checksum := utils.CalChecksum(m.headerAndPayload())
 	if checksum != m.Checksum {
 		return m, errors.ErrChecksumMismatch
 	}
@@ -250,7 +263,7 @@ func DecodeFrame(conn net.Conn) (Msg, error) {
 
 // New creates a new message with auto-generated MsgID
 func New(msgType uint8, payload []byte) Msg {
-	return Msg{
+	m := Msg{
 		Magic:      MagicNumber,
 		Version:    version,
 		Type:       msgType,
@@ -258,8 +271,9 @@ func New(msgType uint8, payload []byte) Msg {
 		PayloadLen: uint16(len(payload)),
 		Timestamp:  utils.NewTimestamp(),
 		Payload:    payload,
-		Checksum:   utils.CalChecksum(payload),
 	}
+	m.Checksum = utils.CalChecksum(m.headerAndPayload())
+	return m
 }
 
 type AckPayload struct {
