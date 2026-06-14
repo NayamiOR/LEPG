@@ -2,6 +2,7 @@ package msg
 
 import (
 	"LEPG/internal/errors"
+	"LEPG/internal/model"
 	"LEPG/internal/utils"
 	"bytes"
 	"encoding/binary"
@@ -12,6 +13,7 @@ import (
 	"sync/atomic"
 )
 
+// 包级常量和类型定义
 const (
 	MagicNumber    uint16 = 0x4E59 // NY
 	MagicSize      int    = 2
@@ -30,23 +32,26 @@ const (
 	version uint8 = 1
 )
 
-var globalIDGen = &atomicIdGenerator{}
-
 // 消息类型常量
 const (
-	MsgTypeHandshake     uint8 = 0x01 // 握手消息
-	MsgTypeHandshakeAck  uint8 = 0x02 // 握手ACK
-	MsgTypeUpload        uint8 = 0x03 // 上传数据消息
-	MsgTypeUploadAck     uint8 = 0x04 // 上传ACK
-	MsgTypeHeartbeat     uint8 = 0x05 // 心跳消息
-	MsgTypeHeartbeatAck  uint8 = 0x06 // 心跳ACK
-	MsgTypeNotify        uint8 = 0x07 // 消息通知
+	MsgTypeHandshake    uint8 = iota + 1 // 握手消息
+	MsgTypeHandshakeAck                  // 握手ACK
+	MsgTypeUpload                        // 上传数据消息
+	MsgTypeUploadAck                     // 上传ACK
+	MsgTypeHeartbeat                     // 心跳消息
+	MsgTypeHeartbeatAck                  // 心跳ACK
+	MsgTypeNotify                        // 消息通知
 )
 
-// Flags 常量
+// Flags 常量（暂时不用）
+const ()
+
+// Reason Code
 const (
-	FlagRequest  uint8 = 0x00
-	FlagResponse uint8 = 0x01
+	Ok uint8 = iota + 1
+	Failed
+	BadSn
+	BadToken
 )
 
 type Msg struct {
@@ -61,6 +66,14 @@ type Msg struct {
 	Checksum   uint16
 }
 
+type Packable interface {
+	Encode() ([]byte, error)
+	Decode(data []byte) error
+}
+
+// ID generator interface and implementation
+var globalIDGen = &atomicIdGenerator{}
+
 type idGenerator interface {
 	Next() uint16
 }
@@ -73,22 +86,29 @@ func (g *atomicIdGenerator) Next() uint16 {
 	return uint16(g.current.Add(1) % 65536)
 }
 
+// 工厂
+
 type MsgFactory struct {
 	idGen idGenerator
 }
 
-// NewMsgFactory 创建新的消息工厂实例
 func NewMsgFactory() *MsgFactory {
 	return &MsgFactory{
 		idGen: &atomicIdGenerator{},
 	}
 }
 
-func (f *MsgFactory) NewMsg(flags uint8, t uint8, payload []byte) *Msg {
-	return &Msg{
+func (f *MsgFactory) NewMsg(t uint8, packet Packable) (*Msg, error) {
+	defaultFlags := uint8(0)
+	payload, err := packet.Encode()
+	if err != nil {
+		return nil, err
+	}
+
+	msg := &Msg{
 		Magic:      MagicNumber,
 		Version:    version,
-		Flags:      flags,
+		Flags:      defaultFlags,
 		Type:       t,
 		MsgID:      f.idGen.Next(),
 		PayloadLen: uint16(len(payload)),
@@ -96,30 +116,8 @@ func (f *MsgFactory) NewMsg(flags uint8, t uint8, payload []byte) *Msg {
 		Payload:    payload,
 		Checksum:   utils.CalChecksum(payload),
 	}
-}
 
-type Packable interface {
-	Encode() ([]byte, error)
-	Type() uint8
-}
-
-func (f *MsgFactory) NewFromPacket(packet Packable) *Msg {
-	// 保留向后兼容的包装：编码 packet 并构造 Msg
-	payload, err := packet.Encode()
-	if err != nil {
-		return nil
-	}
-	return &Msg{
-		Magic:      MagicNumber,
-		Version:    version,
-		Flags:      0,
-		Type:       packet.Type(),
-		MsgID:      f.idGen.Next(),
-		PayloadLen: uint16(len(payload)),
-		Timestamp:  utils.NewTimestamp(),
-		Payload:    payload,
-		Checksum:   utils.CalChecksum(payload),
-	}
+	return msg, nil
 }
 
 // 注册制工厂：将消息类型映射到构造器，用于从 Msg 构造具体的 Packable
@@ -174,60 +172,6 @@ func (m *Msg) Encode() ([]byte, error) {
 	binary.Write(buf, binary.BigEndian, m.Checksum)
 
 	return buf.Bytes(), nil
-}
-
-func Decode(data []byte) (Msg, error) {
-	var m Msg
-	reader := bytes.NewReader(data)
-
-	// Read fixed-size fields
-	err := binary.Read(reader, binary.BigEndian, &m.Magic)
-	if err != nil {
-		return m, err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.Version)
-	if err != nil {
-		return m, err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.Flags)
-	if err != nil {
-		return m, err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.Type)
-	if err != nil {
-		return m, err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.MsgID)
-	if err != nil {
-		return m, err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.PayloadLen)
-	if err != nil {
-		return m, err
-	}
-	err = binary.Read(reader, binary.BigEndian, &m.Timestamp)
-	if err != nil {
-		return m, err
-	}
-
-	// Read payload if present
-	if m.PayloadLen > 0 {
-		m.Payload = make([]byte, m.PayloadLen)
-		_, err = reader.Read(m.Payload)
-		if err != nil {
-			return m, err
-		}
-	} else {
-		m.Payload = nil
-	}
-
-	// Read checksum
-	err = binary.Read(reader, binary.BigEndian, &m.Checksum)
-	if err != nil {
-		return m, err
-	}
-
-	return m, nil
 }
 
 func DecodeFrame(conn net.Conn) (Msg, error) {
@@ -318,166 +262,29 @@ func New(msgType uint8, payload []byte) Msg {
 	}
 }
 
-// NewWithID creates a new message with custom MsgID
-func NewWithID(flags uint8, msgID uint16, payload []byte) Msg {
-	return Msg{
-		Magic:      MagicNumber,
-		Version:    version,
-		Flags:      flags,
-		MsgID:      msgID,
-		PayloadLen: uint16(len(payload)),
-		Timestamp:  utils.NewTimestamp(),
-		Payload:    payload,
-		Checksum:   utils.CalChecksum(payload),
-	}
+type AckPayload struct {
+	MsgID uint16
+	Code  uint8
 }
 
-// --- 示例 Packable 实现与注册 ---
-
-type HandshakePacket struct {
-	Handshake *HandshakePayload
-	Response  *HandshakeResponsePayload
+type HandshakePayload struct {
+	FirmwareVersion uint8
+	Sn              string
+	Token           string
 }
 
-func (p *HandshakePacket) Encode() ([]byte, error) {
-	if p.Handshake != nil {
-		return p.Handshake.Encode()
-	}
-	if p.Response != nil {
-		return p.Response.Encode()
-	}
-	return nil, nil
+type UploadPayload struct {
+	Readings []model.Reading
 }
 
-func (p *HandshakePacket) Type() uint8 { return MsgTypeHandshake }
-
-func NewHandshakeRequestPacket(version uint8, sn, token string) *HandshakePacket {
-	return &HandshakePacket{
-		Handshake: &HandshakePayload{Version: version, Sn: sn, Token: token},
-	}
+type HeartbeatPayload struct {
 }
 
-func NewHandshakeResponsePacket(code uint8, message string) *HandshakePacket {
-	return &HandshakePacket{
-		Response: &HandshakeResponsePayload{Code: code, Message: message},
-	}
-}
-
-type UploadPacket struct {
-	Payload []byte
-}
-
-func (p *UploadPacket) Encode() ([]byte, error) { return p.Payload, nil }
-func (p *UploadPacket) Type() uint8             { return MsgTypeUpload }
-func NewUploadPacket(payload []byte) *UploadPacket {
-	return &UploadPacket{Payload: payload}
-}
-
-type HeartbeatPacket struct {
-	Payload []byte
-}
-
-func (p *HeartbeatPacket) Encode() ([]byte, error) { return p.Payload, nil }
-func (p *HeartbeatPacket) Type() uint8             { return MsgTypeHeartbeat }
-func NewHeartbeatPacket(payload []byte) *HeartbeatPacket {
-	return &HeartbeatPacket{Payload: payload}
-}
-
-type NotifyPacket struct {
-	Payload []byte
-}
-
-func (p *NotifyPacket) Encode() ([]byte, error) { return p.Payload, nil }
-func (p *NotifyPacket) Type() uint8             { return MsgTypeNotify }
-func NewNotifyPacket(payload []byte) *NotifyPacket {
-	return &NotifyPacket{Payload: payload}
-}
-
-type HandshakeAckPacket struct {
-	Ack *AckPayload
-}
-
-func (p *HandshakeAckPacket) Encode() ([]byte, error) { return p.Ack.Encode() }
-func (p *HandshakeAckPacket) Type() uint8              { return MsgTypeHandshakeAck }
-
-type UploadAckPacket struct {
-	Ack *AckPayload
-}
-
-func (p *UploadAckPacket) Encode() ([]byte, error) { return p.Ack.Encode() }
-func (p *UploadAckPacket) Type() uint8              { return MsgTypeUploadAck }
-
-type HeartbeatAckPacket struct {
-	Ack *AckPayload
-}
-
-func (p *HeartbeatAckPacket) Encode() ([]byte, error) { return p.Ack.Encode() }
-func (p *HeartbeatAckPacket) Type() uint8              { return MsgTypeHeartbeatAck }
-
-func init() {
-	RegisterPacketType(MsgTypeHandshake, func(m *Msg) (Packable, error) {
-		if m == nil {
-			return nil, nil
-		}
-		if m.Flags&FlagResponse != 0 {
-			resp, err := DecodeHandshakeResponsePayload(m.Payload)
-			if err != nil {
-				return nil, err
-			}
-			return &HandshakePacket{Response: resp}, nil
-		}
-		hs, err := DecodeHandshakePayload(m.Payload)
-		if err != nil {
-			return nil, err
-		}
-		return &HandshakePacket{Handshake: hs}, nil
-	})
-	RegisterPacketType(MsgTypeUpload, func(m *Msg) (Packable, error) {
-		if m == nil {
-			return nil, nil
-		}
-		return &UploadPacket{Payload: m.Payload}, nil
-	})
-	RegisterPacketType(MsgTypeHeartbeat, func(m *Msg) (Packable, error) {
-		if m == nil {
-			return nil, nil
-		}
-		return &HeartbeatPacket{Payload: m.Payload}, nil
-	})
-	RegisterPacketType(MsgTypeNotify, func(m *Msg) (Packable, error) {
-		if m == nil {
-			return nil, nil
-		}
-		return &NotifyPacket{Payload: m.Payload}, nil
-	})
-	RegisterPacketType(MsgTypeHandshakeAck, func(m *Msg) (Packable, error) {
-		if m == nil {
-			return nil, nil
-		}
-		ack, err := DecodeAckPayload(m.Payload)
-		if err != nil {
-			return nil, err
-		}
-		return &HandshakeAckPacket{Ack: ack}, nil
-	})
-	RegisterPacketType(MsgTypeUploadAck, func(m *Msg) (Packable, error) {
-		if m == nil {
-			return nil, nil
-		}
-		ack, err := DecodeAckPayload(m.Payload)
-		if err != nil {
-			return nil, err
-		}
-		return &UploadAckPacket{Ack: ack}, nil
-	})
-	RegisterPacketType(MsgTypeHeartbeatAck, func(m *Msg) (Packable, error) {
-		if m == nil {
-			return nil, nil
-		}
-		ack, err := DecodeAckPayload(m.Payload)
-		if err != nil {
-			return nil, err
-		}
-		return &HeartbeatAckPacket{Ack: ack}, nil
-	})
+type NotifyPayload struct {
+	EventCode  uint8  // 事件类型（如 0x01=上线, 0x02=离线, 0x10=传感器故障）
+	DeviceHash string // 关联设备 Hash
+	Timestamp  uint32 // 事件发生的 Unix 秒级时间
+	Severity   uint8  // 严重等级（0=信息, 1=警告, 2=严重, 3=致命）
+	Message    string // 人类可读的描述
+	RawData    []byte // 可选的附加结构化数据（如故障详情 JSON/二进制）
 }
