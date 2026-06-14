@@ -15,8 +15,16 @@ import (
 
 func TestNewMsg(t *testing.T) {
 	// Test auto-generated MsgID
-	msg1 := New(1, []byte("test"))
-	msg2 := New(2, []byte("hello"))
+	factory := NewMsgFactory()
+
+	msg1, err := factory.NewMsg(MsgTypeHandshake, &HandshakePayload{FirmwareVersion: 1, Sn: "s", Token: "t"})
+	if err != nil {
+		t.Fatalf("NewMsg failed: %v", err)
+	}
+	msg2, err := factory.NewMsg(MsgTypeUpload, &HeartbeatPayload{})
+	if err != nil {
+		t.Fatalf("NewMsg failed: %v", err)
+	}
 
 	if msg1.Magic != MagicNumber {
 		t.Errorf("Expected MagicNumber, got %v", msg1.Magic)

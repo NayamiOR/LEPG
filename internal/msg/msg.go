@@ -72,8 +72,6 @@ type Packable interface {
 }
 
 // ID generator interface and implementation
-var globalIDGen = &atomicIdGenerator{}
-
 type idGenerator interface {
 	Next() uint16
 }
@@ -259,21 +257,6 @@ func DecodeFrame(conn net.Conn) (Msg, error) {
 	}
 
 	return m, nil
-}
-
-// New creates a new message with auto-generated MsgID
-func New(msgType uint8, payload []byte) Msg {
-	m := Msg{
-		Magic:      MagicNumber,
-		Version:    version,
-		Type:       msgType,
-		MsgID:      globalIDGen.Next(),
-		PayloadLen: uint16(len(payload)),
-		Timestamp:  utils.NewTimestamp(),
-		Payload:    payload,
-	}
-	m.Checksum = utils.CalChecksum(m.headerAndPayload())
-	return m
 }
 
 type AckPayload struct {
