@@ -1,3 +1,10 @@
+---
+title: Modbus 设备配置
+description: lepgc 通过 Modbus RTU/TCP 采集工业设备的 TOML 配置：设备级/数据点级参数、功能码、数据类型、缓存与健康监控
+type: reference
+tags: [config, modbus, client, reference]
+---
+
 # Modbus 设备配置
 
 ## 概述
@@ -438,3 +445,12 @@ A: 根据设备数据手册确定：
 - **配置加载**：`internal/client/config.go`
 - **客户端主循环**：`internal/client/client.go`
 - **消息协议**：`internal/msg/msg.go`
+
+---
+
+## 相关笔记
+
+- [[client-config|客户端配置]]
+- [[overview|配置系统总览]]
+- [[handshake-heartbeat-analysis|握手与心跳逻辑分析报告]]
+- [[device-state-analysis|设备状态记录实现状态分析报告]]

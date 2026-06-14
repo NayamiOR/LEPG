@@ -1,4 +1,11 @@
-# 云端 - 网关认证逻辑
+---
+title: 网关认证逻辑
+description: 云端与网关的握手认证演进路线——从静态 SN/Token 配对到一次性 Token + 随机长密码
+type: design
+tags: [auth, handshake, design]
+---
+
+# 网关认证逻辑
 
 ## 第一版
 

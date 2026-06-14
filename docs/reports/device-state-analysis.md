@@ -1,3 +1,11 @@
+---
+title: 设备状态记录实现状态分析报告
+description: 基于 main/f32820a 的 LEPG 设备状态记录现状——网关与边缘设备的「数值」通路已通、「状态/存活」通路全断
+type: report
+tags: [device-state, connection, report, mqtt, cache]
+aliases: [设备状态记录实现状态分析报告]
+---
+
 # LEPG 设备状态记录实现状态分析报告
 
 > 适用范围：`internal/server/` 及其数据/连接基础设施（`cache/`、`cache/connections/`、`cache/migrations/`），并涵盖上游消息协议层 `internal/msg/`、数据模型 `internal/model/` 与客户端设备定义 `internal/client/`。
@@ -38,9 +46,9 @@
 
 ### 3.1 基础设施：双实现齐全
 
-[internal/server/cache/connections/](../internal/server/cache/connections/) 提供了完整的连接管理零件：
+[internal/server/cache/connections/](../../internal/server/cache/connections/) 提供了完整的连接管理零件：
 
-- [connections.go](../internal/server/cache/connections/connections.go) 定义 `Connection` 结构体与 `ConnectionManager` 接口：
+- [connections.go](../../internal/server/cache/connections/connections.go) 定义 `Connection` 结构体与 `ConnectionManager` 接口：
 
   ```go
   type Connection struct {
@@ -63,8 +71,8 @@
   }
   ```
 
-- [memory.go](../internal/server/cache/connections/memory.go)：`MemoryConnectionManager`，`sync.RWMutex` + `map[string]*Connection`，**六个方法全部实现**。
-- [redis.go](../internal/server/cache/connections/redis.go)：`RedisConnectionManager`，key 前缀 `lepg:device:`，用 `HSet`/Pipeline 写入 hash、`Keys("lepg:device:*")` 扫描列表，**六个方法全部实现**。
+- [memory.go](../../internal/server/cache/connections/memory.go)：`MemoryConnectionManager`，`sync.RWMutex` + `map[string]*Connection`，**六个方法全部实现**。
+- [redis.go](../../internal/server/cache/connections/redis.go)：`RedisConnectionManager`，key 前缀 `lepg:device:`，用 `HSet`/Pipeline 写入 hash、`Keys("lepg:device:*")` 扫描列表，**六个方法全部实现**。
 
 即"零件"层面：结构体字段齐全（已预留 `ConnectedAt`/`LastHeartbeat`），两套后端（内存/分布式）都造好了。
 
@@ -72,7 +80,7 @@
 
 `ConnectionManager` 是典型的"造好了零件但还没装上车"。证据：
 
-- [internal/server/server.go](../internal/server/server.go) 的核心函数签名里**根本没有它**：
+- [internal/server/server.go](../../internal/server/server.go) 的核心函数签名里**根本没有它**：
 
   ```go
   func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher) error
@@ -81,10 +89,10 @@
 
   传入的是 `cache.Store`（readings 存储）与 `EventPublisher`，**没有 ConnectionManager**。
 
-- 握手鉴权成功（[server.go:89-90](../internal/server/server.go#L89)）：仅打日志 `slog.Info("client authenticated", ...)`，**不调用 `RegisterConnection`**。
-- 消息循环（[server.go:94-153](../internal/server/server.go#L94)）：只有 `MsgTypeUpload` 一个分支，**没有 `MsgTypeHeartbeat` 分支**，`UpdateHeartbeat` 永不触发（与 [《握手与心跳逻辑分析报告》](./握手与心跳逻辑分析报告.md) 第四节"server 不处理心跳"一致）。
-- 连接断开：[server.go:35](../internal/server/server.go#L35) 的 `defer conn.Close()` 是**唯一清理动作**，不调用 `RemoveConnection`、不发任何离线事件。
-- [cmd/server/main.go](../cmd/server/main.go)：**不实例化** `ConnectionManager`，也不创建 Redis client（`RedisConfig` 同样定义了却无人使用）。
+- 握手鉴权成功（[server.go:89-90](../../internal/server/server.go#L89)）：仅打日志 `slog.Info("client authenticated", ...)`，**不调用 `RegisterConnection`**。
+- 消息循环（[server.go:94-153](../../internal/server/server.go#L94)）：只有 `MsgTypeUpload` 一个分支，**没有 `MsgTypeHeartbeat` 分支**，`UpdateHeartbeat` 永不触发（与 [[handshake-heartbeat-analysis]] 第四节"server 不处理心跳"一致）。
+- 连接断开：[server.go:35](../../internal/server/server.go#L35) 的 `defer conn.Close()` 是**唯一清理动作**，不调用 `RemoveConnection`、不发任何离线事件。
+- [cmd/server/main.go](../../cmd/server/main.go)：**不实例化** `ConnectionManager`，也不创建 Redis client（`RedisConfig` 同样定义了却无人使用）。
 
 后果：网关在线/离线在 server 的内存与持久层中**均无任何记录**。状态只活在某个活着的 goroutine 里，goroutine 一退就彻底消失。无法回答"当前哪些网关在线""某网关何时上线""它多久没心跳了"这类基本问题。
 
@@ -92,9 +100,9 @@
 
 即便有了状态，server 也无处对外广播：
 
-- [internal/server/mqtt.go:17](../internal/server/mqtt.go#L17) 定义了 `TopicStatus = "device/%s/status"`，但**全代码库无任何 `Publish` 调用指向它**。
-- [internal/server/publisher.go](../internal/server/publisher.go) 的 `EventPublisher` 接口只有 `PublishDeviceReadings`，**没有** `PublishDeviceStatus` / `PublishDeviceEvent`，也无对应实现。
-- [internal/msg/msg.go:280](../internal/msg/msg.go#L280) 的 `NotifyPayload` 已为状态事件预留了完整字段：
+- [internal/server/mqtt.go:17](../../internal/server/mqtt.go#L17) 定义了 `TopicStatus = "device/%s/status"`，但**全代码库无任何 `Publish` 调用指向它**。
+- [internal/server/publisher.go](../../internal/server/publisher.go) 的 `EventPublisher` 接口只有 `PublishDeviceReadings`，**没有** `PublishDeviceStatus` / `PublishDeviceEvent`，也无对应实现。
+- [internal/msg/msg.go:280](../../internal/msg/msg.go#L280) 的 `NotifyPayload` 已为状态事件预留了完整字段：
 
   ```go
   type NotifyPayload struct {
@@ -122,10 +130,10 @@ client 轮询 → model.Reading → UploadPayload.Readings（gob）→ server
 server: parse Upload → SQLiteStore.SaveReadings
 ```
 
-- 接入点：[internal/server/server.go:128-151](../internal/server/server.go#L128)，解析 `UploadPayload` 后调用 `s.SaveReadings(...)`。
-- 存储：[internal/server/cache/store.go](../internal/server/cache/store.go) 的 `StoredReading`（含 `sn`/`device`/`device_name`/`point`/`point_name`/`value`/`quality`/`timestamp` 等）。
-- 建表：[internal/server/cache/migrations/001_init.go](../internal/server/cache/migrations/001_init.go) 创建 `readings` 表，含索引 `idx_readings_sn_ts`、`idx_readings_dev_pt`。
-- 查询：[internal/server/cache/sqlite.go](../internal/server/cache/sqlite.go) 的 `QueryReadings`，支持按 `sn`/`device`/时间范围过滤。
+- 接入点：[internal/server/server.go:128-151](../../internal/server/server.go#L128)，解析 `UploadPayload` 后调用 `s.SaveReadings(...)`。
+- 存储：[internal/server/cache/store.go](../../internal/server/cache/store.go) 的 `StoredReading`（含 `sn`/`device`/`device_name`/`point`/`point_name`/`value`/`quality`/`timestamp` 等）。
+- 建表：[internal/server/cache/migrations/001_init.go](../../internal/server/cache/migrations/001_init.go) 创建 `readings` 表，含索引 `idx_readings_sn_ts`、`idx_readings_dev_pt`。
+- 查询：[internal/server/cache/sqlite.go](../../internal/server/cache/sqlite.go) 的 `QueryReadings`，支持按 `sn`/`device`/时间范围过滤。
 
 注意：记录的是**数值快照**，不是状态。但因为它携带了 `device`(hash) 和 `device_name`，所以**能从 readings 反推出"某网关下出现过哪些设备"**——这是目前 server 感知边缘设备存在的唯一途径。
 
@@ -133,13 +141,13 @@ server: parse Upload → SQLiteStore.SaveReadings
 
 server 侧没有任何"设备目录"概念：
 
-- [internal/server/config.go](../internal/server/config.go) 的 `ServerConfig.Clients []ClientDef` 只有 `sn/token/description`，**没有子设备清单**。
+- [internal/server/config.go](../../internal/server/config.go) 的 `ServerConfig.Clients []ClientDef` 只有 `sn/token/description`，**没有子设备清单**。
 - 没有 `devices` 表。一个边缘设备在 server 眼里"存在"，当且仅当它上传过至少一条 reading；要列网关下设备只能 `SELECT DISTINCT device FROM readings WHERE sn=?`，且无从得知设备型号/连接方式/点位定义（这些只活在 client 配置）。
 
 ### 4.3 在线/离线检测：配置有、逻辑无 ⚠️
 
-- [internal/client/config.go:229-230](../internal/client/config.go#L229) 的 `DeviceConfig` 有 `OfflineThreshold`（默认 30s）与 `EnableMonitor`（默认 true）字段，看起来是给离线检测准备的。
-- 但 [internal/client/modbus.go](../internal/client/modbus.go) 的 `ModbusDevicePolling` 读取失败时只做一件事：
+- [internal/client/config.go:229-230](../../internal/client/config.go#L229) 的 `DeviceConfig` 有 `OfflineThreshold`（默认 30s）与 `EnableMonitor`（默认 true）字段，看起来是给离线检测准备的。
+- 但 [internal/client/modbus.go](../../internal/client/modbus.go) 的 `ModbusDevicePolling` 读取失败时只做一件事：
 
   ```go
   if err != nil {
@@ -148,13 +156,13 @@ server 侧没有任何"设备目录"概念：
   }
   ```
 
-  **没有计时器、没有离线判定、不触发 `NotifyPayload`(0x02)**。这两个字段目前唯一用途是启动时 [formatModbusDevice](../internal/client/config.go#L503) 打印设备列表（展示 `offline=30s monitor=true`）。
+  **没有计时器、没有离线判定、不触发 `NotifyPayload`(0x02)**。这两个字段目前唯一用途是启动时 [formatModbusDevice](../../internal/client/config.go#L503) 打印设备列表（展示 `offline=30s monitor=true`）。
 
 - server 侧更无从得知边缘设备存活——因为根本没有 `MsgTypeNotify` 接收逻辑。
 
 ### 4.4 数据出口（MQTT）：被桩实现挡住
 
-- [cmd/server/main.go:90-91](../cmd/server/main.go#L90)：
+- [cmd/server/main.go:90-91](../../cmd/server/main.go#L90)：
 
   ```go
   // TODO: 数据桥接阶段替换为 server.NewMqttPublisher(broker)
@@ -187,7 +195,7 @@ server 侧没有任何"设备目录"概念：
 1. **网关状态接线**（最低成本、收益最大）
    - `cmd/server/main.go` 创建 `ConnectionManager`（先用 `MemoryConnectionManager`，Redis 待分布式部署再切）。
    - `HandleConnection` 鉴权成功 → `RegisterConnection`（`DeviceHash` 用 SN 的 hash 或 SN 本身）；断开 → `RemoveConnection`。
-   - 接入心跳：依赖 [《握手与心跳逻辑分析报告》](./握手与心跳逻辑分析报告.md) 第六节"心跳落地"先行（client 定时发心跳 + server 增 `MsgTypeHeartbeat` 分支），心跳到达 → `UpdateHeartbeat`。
+   - 接入心跳：依赖 [[handshake-heartbeat-analysis]] 第六节"心跳落地"先行（client 定时发心跳 + server 增 `MsgTypeHeartbeat` 分支），心跳到达 → `UpdateHeartbeat`。
    - 补 `ListConnections` 的查询出口（HTTP/调试接口），让"在线网关列表"可观测。
 
 2. **边缘设备注册表**
@@ -203,3 +211,13 @@ server 侧没有任何"设备目录"概念：
    - `EventPublisher` 扩 `PublishDeviceStatus(sn, status)`，发布 `device/{sn}/status`（上线/离线），与第 1、3 步联动。
 
 > 这四项中，第 1、4 项几乎纯接线（零件已就绪），第 2、3 项需要新增表与逻辑。建议作为独立的小步迭代推进，每步可单独验证。
+
+---
+
+## 相关笔记
+
+- [[handshake-heartbeat-analysis|握手与心跳逻辑分析报告]]（心跳未接入的根因）
+- [[message-protocol|消息协议]]（NotifyPayload 0x07 定义）
+- [[mqtt-broker-design|MQTT Broker 设计]]（status topic 与数据桥接方案）
+- [[modbus-config|Modbus 设备配置]]（OfflineThreshold / EnableMonitor 字段）
+- [[roadmap|开发路线图]]

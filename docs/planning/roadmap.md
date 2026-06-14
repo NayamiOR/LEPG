@@ -1,3 +1,10 @@
+---
+title: LEPG 项目现状报告 & 开发路线图
+description: LEPG 各模块完成度、关键问题、服务端功能规划与 Phase 0–8 分阶段开发路线图
+type: roadmap
+tags: [roadmap, planning, status]
+---
+
 # LEPG 项目现状报告 & 开发路线图
 
 ## 项目概况
@@ -12,6 +19,8 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
                           SQLite 缓存                    SQLite 存储
                        (断点续传/离线重传)
 ```
+
+> 完整数据链路图见 [assets/data-link.excalidraw](../assets/data-link.excalidraw)。
 
 ---
 
@@ -92,13 +101,13 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 | 优先级 | 功能 | 说明 | 参考 |
 |--------|------|------|------|
-| P1 | **数据桥接** | Reading→JSON 序列化，`MqttPublisher` 接入替换 `NopPublisher` | `MQTT Broker Design.md` §2 |
-| P2 | **MQTT 认证** | 自定义 AuthHook，MQTT username/password 映射 SN/Token | `MQTT Broker Design.md` §3 |
-| P3 | **ACL 规则 + QoS 分级** | 设备只能访问自己 SN 的 Topic；reading QoS 0、status QoS 1 + Retain | `MQTT Broker Design.md` §4-5 |
+| P1 | **数据桥接** | Reading→JSON 序列化，`MqttPublisher` 接入替换 `NopPublisher` | [[mqtt-broker-design]] §2 |
+| P2 | **MQTT 认证** | 自定义 AuthHook，MQTT username/password 映射 SN/Token | [[mqtt-broker-design]] §3 |
+| P3 | **ACL 规则 + QoS 分级** | 设备只能访问自己 SN 的 Topic；reading QoS 0、status QoS 1 + Retain | [[mqtt-broker-design]] §4-5 |
 | P3 | **心跳超时检测** | 客户端长时间无消息则断开连接 | |
 | P3 | **设备上下线通知** | 发布 `device/{SN}/status`（Retain），新订阅者立即获取状态 | |
-| P4 | **性能测试** | 100+ 连接、1000 msg/s 吞吐、24h 稳定性 | `MQTT Broker Design.md` §6 |
-| P5 | **MQTT 消息持久化** | Bolt Hook，Broker 重启后恢复 session/retained message | `MQTT Broker Design.md` §7 |
+| P4 | **性能测试** | 100+ 连接、1000 msg/s 吞吐、24h 稳定性 | [[mqtt-broker-design]] §6 |
+| P5 | **MQTT 消息持久化** | Bolt Hook，Broker 重启后恢复 session/retained message | [[mqtt-broker-design]] §7 |
 | P6 | **WebSocket TLS** | WSS 支持 | |
 | 远期 | **命令下发** | 从 MQTT `device/{SN}/command` 接收指令，转发到对应边缘客户端 | |
 | 远期 | **HTTP API** | RESTful 接口供外部系统查询历史数据、管理设备 | |
@@ -186,7 +195,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 | 任务 | 说明 | 参考 |
 |------|------|------|
-| 一次性 Token 注册 | 客户端 CLI 生成 SN，服务端提供一次性 Token | `docs/Verification.md` |
+| 一次性 Token 注册 | 客户端 CLI 生成 SN，服务端提供一次性 Token | [[authentication]] |
 | 握手后 Token 失效 + 随机长密码 | 首次握手成功后替换 | |
 | 客户端持久化密码 | 存储到本地配置或安全存储 | |
 
@@ -261,3 +270,14 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 低   → 上传重连 + 规则引擎（Phase 8）
 远期 → Web UI、集群、OPC-UA 等
 ```
+
+---
+
+## 相关笔记
+
+- [[mqtt-broker-design|MQTT Broker 设计]]
+- [[handshake-heartbeat-analysis|握手与心跳逻辑分析报告]]
+- [[device-state-analysis|设备状态记录实现状态分析报告]]
+- [[authentication|网关认证逻辑]]
+- [[message-protocol|消息协议]]
+- [[overview|配置系统总览]]

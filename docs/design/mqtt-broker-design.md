@@ -1,4 +1,11 @@
-# MQTT Broker 设计文档
+---
+title: MQTT Broker 设计
+description: 服务端内嵌 MQTT Broker 的 Topic 设计、TLV→MQTT 数据桥接、SN/Token 认证、ACL、QoS 策略与实施优先级
+type: design
+tags: [mqtt, server, broker, design]
+---
+
+# MQTT Broker 设计
 
 LEPG Server 内嵌 MQTT Broker 的后续设计方案。当前框架已完成基础搭建（comqtt v2 集成、MqttBroker 封装、EventPublisher 接口），以下是需要逐步落地的功能模块及其设计取舍。
 
@@ -138,6 +145,8 @@ password = 设备 Token（如 "token123456"）
 当 `MqttConfig.TCPAddr` 不是本地地址（非 `127.x` 或 `localhost`）时：
 - 如果未配置自定义 AuthHook → 启动时打印 WARN（当前行为）
 - 后续改为：非本地绑定时，如果没有注册认证 Hook，**拒绝启动**
+
+> 认证逻辑的整体演进路线见 [[authentication]]。
 
 ---
 

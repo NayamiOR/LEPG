@@ -214,7 +214,7 @@ description = "Test client 1"
 ### Adding New Message Types
 
 1. Define message type constant in `internal/msg/msg.go`
-2. Update documentation in `docs/Message Design.md`
+2. Update documentation in `docs/design/message-protocol.md`
 3. Add encoding/decoding logic if needed
 4. Write tests in `msg_test.go`
 

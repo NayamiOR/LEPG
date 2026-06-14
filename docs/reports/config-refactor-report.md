@@ -1,3 +1,11 @@
+---
+title: 配置系统重构案例报告
+description: 从全局 Viper 单例到 Provider Chain 依赖注入的重构全过程——背景、设计、五阶段实施、收益与最佳实践
+type: case-study
+tags: [config, refactor, case-study, provider-chain, di]
+aliases: [配置系统重构案例报告]
+---
+
 # 配置系统重构案例报告：从全局状态到依赖注入
 
 > **重构时间**：2024年某月  
@@ -397,7 +405,7 @@ var runCmd = &cobra.Command{
         
         // 直接调用业务逻辑
         client.MainFunc(cfg)
-    },
+    }
 }
 ```
 
@@ -475,7 +483,6 @@ func TestConfig(t *testing.T) {
 ### 4.4 可扩展性
 
 **添加新配置源**（示例：从 Consul 读取）：
-
 ```go
 type ConsulProvider struct {
     client *consul.Client
@@ -583,8 +590,10 @@ if u, ok := provider.(config.IUnmarshaler); ok {
 func ProcessData(cfg *Config, db *Database) error {
     // 依赖明确
 }
+```
 
 ❌ 不推荐：
+```go
 func ProcessData() error {
     cfg := GetGlobalConfig()
     db := GetGlobalDB()
@@ -716,3 +725,14 @@ func ProcessData() error {
 **最后更新**：2024-05-25  
 **作者**：LEPG Team  
 **反馈**：如有问题请提交 Issue
+
+---
+
+## 相关笔记
+
+- [[overview|配置系统总览]]
+- [[config-internals|内部机制]]（Provider Chain 实现细节）
+- [[config-migration|迁移指南（旧系统 → 新系统）]]
+- [[server-config|服务器配置]]
+- [[client-config|客户端配置]]
+- [[config-dev-guide|开发者指南：添加新配置项]]

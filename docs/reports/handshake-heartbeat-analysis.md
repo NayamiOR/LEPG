@@ -1,3 +1,11 @@
+---
+title: 握手与心跳逻辑分析报告
+description: 基于 main/f32820a 的 LEPG 握手鉴权（已实现）与心跳协议（协议就绪、业务未接入）现状分析
+type: report
+tags: [handshake, heartbeat, report, connection, auth]
+aliases: [握手与心跳逻辑分析报告]
+---
+
 # LEPG Server 与 Client 握手/心跳逻辑分析报告
 
 > 适用范围：`internal/server/` 与 `internal/client/`，并涵盖其依赖的消息协议层 `internal/msg/`。
@@ -33,11 +41,11 @@
 
 - 固定帧头 13 字节，末尾 2 字节 CRC16，总长 = `13 + PayloadLen + 2`。
 - `Magic = 0x4E59`（ASCII "NY"），`Version` 当前硬编码为 `1`，`Flags` 预留为 `0`。
-- 定义位置：[internal/msg/msg.go](../internal/msg/msg.go) 字段尺寸常量与 `Msg` 结构体。
+- 定义位置：[internal/msg/msg.go](../../internal/msg/msg.go) 字段尺寸常量与 `Msg` 结构体。
 
 ### 2.2 消息类型常量
 
-[internal/msg/msg.go](../internal/msg/msg.go)（`iota + 1` 自增）：
+[internal/msg/msg.go](../../internal/msg/msg.go)（`iota + 1` 自增）：
 
 ```go
 MsgTypeHandshake    = 0x01  // 握手      client -> server
@@ -62,7 +70,7 @@ BadToken = 4   // SN 匹配但 Token 不一致
 
 | Payload | 用途 | 线上格式 | 实现位置 |
 |---------|------|----------|----------|
-| `HandshakePayload` | 握手请求 | `[FirmwareVersion:1B][SnLen:1B][Sn:nB][TokenLen:1B][Token:nB]` | [msg.go](../internal/msg/msg.go) + [payload.go](../internal/msg/payload.go) |
+| `HandshakePayload` | 握手请求 | `[FirmwareVersion:1B][SnLen:1B][Sn:nB][TokenLen:1B][Token:nB]` | [msg.go](../../internal/msg/msg.go) + [payload.go](../../internal/msg/payload.go) |
 | `HeartbeatPayload` | 心跳请求 | **空（0 字节）**，解码时严格要求 `len==0` | 同上 |
 | `AckPayload` | 握手/上传/心跳的通用回应 | `[MsgID:2B][Code:1B]`（固定 3 字节） | 同上 |
 
@@ -79,8 +87,8 @@ BadToken = 4   // SN 匹配但 Token 不一致
 
 ### 2.6 校验与时间戳
 
-- **CRC16-CCITT**（[internal/utils/checksum.go](../internal/utils/checksum.go)）：多项式 `0x1021`，初值 `0xFFFF`。**校验范围 = 帧头 13B + Payload**，不含自身 2B。编码时由工厂自动算，解码时由 `DecodeFrame` 重算并比对，不符返回 `ErrChecksumMismatch`。
-- **时间戳**（[internal/utils/timestamp.go](../internal/utils/timestamp.go)）：自定义 epoch = `2020-01-01`（节省表示范围），`uint32`，每条消息由工厂自动打戳。**当前未用于超时/防重放判断，仅作为消息元信息记录。**
+- **CRC16-CCITT**（[internal/utils/checksum.go](../../internal/utils/checksum.go)）：多项式 `0x1021`，初值 `0xFFFF`。**校验范围 = 帧头 13B + Payload**，不含自身 2B。编码时由工厂自动算，解码时由 `DecodeFrame` 重算并比对，不符返回 `ErrChecksumMismatch`。
+- **时间戳**（[internal/utils/timestamp.go](../../internal/utils/timestamp.go)）：自定义 epoch = `2020-01-01`（节省表示范围），`uint32`，每条消息由工厂自动打戳。**当前未用于超时/防重放判断，仅作为消息元信息记录。**
 
 ---
 
@@ -106,7 +114,7 @@ BadToken = 4   // SN 匹配但 Token 不一致
 
 ### 3.2 Client 发起握手
 
-[internal/client/client.go](../internal/client/client.go) `performHandshake`（行 271–312）：
+[internal/client/client.go](../../internal/client/client.go) `performHandshake`（行 271–312）：
 
 ```go
 func performHandshake(conn net.Conn, cfg *ClientConfig, factory *msg.MsgFactory) error {
@@ -136,7 +144,7 @@ func performHandshake(conn net.Conn, cfg *ClientConfig, factory *msg.MsgFactory)
 
 ### 3.3 Server 处理握手与鉴权
 
-[internal/server/server.go](../internal/server/server.go) `HandleConnection`（行 34–90），握手是连接建立的**第一步阻塞操作**，鉴权失败即关闭连接：
+[internal/server/server.go](../../internal/server/server.go) `HandleConnection`（行 34–90），握手是连接建立的**第一步阻塞操作**，鉴权失败即关闭连接：
 
 ```go
 // 1. 阻塞等待首帧
@@ -159,7 +167,7 @@ if matched.Token != hsPayload.Token { sendHandshakeResponse(..., msg.BadToken); 
 sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.Ok)            // Code=1
 ```
 
-白名单来源：`ServerConfig.Clients []ClientDef`（TOML `[[clients]]` 节，含 `sn/token/description`），定义于 [internal/server/config.go](../internal/server/config.go)。
+白名单来源：`ServerConfig.Clients []ClientDef`（TOML `[[clients]]` 节，含 `sn/token/description`），定义于 [internal/server/config.go](../../internal/server/config.go)。
 
 回应函数 `sendHandshakeResponse`（行 156–170）：用工厂构造 `HandshakeAck`（`AckPayload.MsgID` = 请求方 MsgID，`Code` = 鉴权结果），`conn.Write` 发出。
 
@@ -207,7 +215,7 @@ for {
 3. **心跳超时检测**：Server 侧无 `SetReadDeadline`、无 `time.Ticker`、无 `select-timeout`，无法发现"静默断连"的客户端。
 4. **心跳失败重连**：Client 侧无心跳失败 → 重连的触发路径。
 
-> 注：[internal/client/upload_loop_example.go](../internal/client/upload_loop_example.go) 中出现的字符串 `"heartbeat check"` 只是 mock 数据，与心跳机制无关。
+> 注：[internal/client/upload_loop_example.go](../../internal/client/upload_loop_example.go) 中出现的字符串 `"heartbeat check"` 只是 mock 数据，与心跳机制无关。
 
 ---
 
@@ -215,7 +223,7 @@ for {
 
 ### 5.1 Server 端：goroutine-per-connection
 
-[internal/server/server.go](../internal/server/server.go) `ReceiveLoop`（行 14–32）：
+[internal/server/server.go](../../internal/server/server.go) `ReceiveLoop`（行 14–32）：
 
 ```go
 for {
@@ -232,7 +240,7 @@ for {
 
 ### 5.2 Client 端：uploadLoop 生命周期
 
-[internal/client/client.go](../internal/client/client.go)：
+[internal/client/client.go](../../internal/client/client.go)：
 
 ```
 MainFunc（行 16）
@@ -261,7 +269,7 @@ for attempt := 0; attempt < cfg.MaxRetry; attempt++ {
 }
 ```
 
-配置项（[internal/client/config.go](../internal/client/config.go)）：`MaxRetry`（默认 10）、`RetryInterval`（默认 5000ms）。
+配置项（[internal/client/config.go](../../internal/client/config.go)）：`MaxRetry`（默认 10）、`RetryInterval`（默认 5000ms）。
 
 **关键缺口——运行时无重连**：`dialWithRetry` 仅在 `uploadLoop` 开头调用**一次**。一旦进入上传循环：
 - `conn.Write` 失败（`uploadReadings` 返回 error）→ `uploadLoop` 直接 `return`（行 169–172）。
@@ -276,7 +284,7 @@ for attempt := 0; attempt < cfg.MaxRetry; attempt++ {
 
 ## 六、ConnectionManager（已定义并实现，但完全未接入）
 
-[internal/server/cache/connections/](../internal/server/cache/connections/) 定义了连接管理基础设施：
+[internal/server/cache/connections/](../../internal/server/cache/connections/) 定义了连接管理基础设施：
 
 - **接口** `ConnectionManager`：含 `RegisterConnection` / `UpdateHeartbeat` / `GetConnection` / `RemoveConnection` / `ListConnections` 等。
 - **`Connection` 结构体**：已预留 `ConnectedAt`、`LastHeartbeat` 字段。
@@ -307,3 +315,13 @@ for attempt := 0; attempt < cfg.MaxRetry; attempt++ {
 - 心跳落地：Client 加心跳定时器 + 配置项；Server 加 `MsgTypeHeartbeat` 分支回 Ack + `SetReadDeadline` 超时清理。
 - 运行时重连：把 `dialWithRetry + performHandshake` 包成可重入的"建立会话"函数，`uploadLoop` 捕获 Write/握手失败后进入重连循环。
 - 接入 ConnectionManager：鉴权成功 `RegisterConnection`，心跳到达 `UpdateHeartbeat`，断开 `RemoveConnection`。
+
+---
+
+## 相关笔记
+
+- [[message-protocol|消息协议]]（TLV 帧与消息类型定义）
+- [[device-state-analysis|设备状态记录实现状态分析报告]]（ConnectionManager 未接入的下游影响）
+- [[authentication|网关认证逻辑]]
+- [[roadmap|开发路线图]]
+- [[client-config|客户端配置]]

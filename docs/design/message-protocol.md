@@ -1,4 +1,11 @@
-# 消息设计
+---
+title: 消息协议（TLV 帧与消息类型）
+description: LEPG 自定义 TLV 二进制协议的帧结构、七种消息类型、ACK 载荷与 Flags 定义
+type: protocol
+tags: [protocol, msg, tlv]
+---
+
+# 消息协议
 
 ## 消息包结构
 
