@@ -187,3 +187,56 @@ func (p *NotifyPayload) Decode(data []byte) error {
 	p.RawData = append([]byte(nil), data[off:off+rdLen]...)
 	return nil
 }
+
+// --- 构造器：供 registry 使用，从 Msg 解出具体 Packable ---
+
+func decodeHandshake(m *Msg) (Packable, error) {
+	p := &HandshakePayload{}
+	if err := p.Decode(m.Payload); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func decodeUpload(m *Msg) (Packable, error) {
+	p := &UploadPayload{}
+	if err := p.Decode(m.Payload); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func decodeHeartbeat(m *Msg) (Packable, error) {
+	p := &HeartbeatPayload{}
+	if err := p.Decode(m.Payload); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func decodeNotify(m *Msg) (Packable, error) {
+	p := &NotifyPayload{}
+	if err := p.Decode(m.Payload); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func decodeAck(m *Msg) (Packable, error) {
+	p := &AckPayload{}
+	if err := p.Decode(m.Payload); err != nil {
+		return nil, err
+	}
+	return p, nil
+}
+
+func init() {
+	RegisterPacketType(MsgTypeHandshake, decodeHandshake)
+	RegisterPacketType(MsgTypeUpload, decodeUpload)
+	RegisterPacketType(MsgTypeHeartbeat, decodeHeartbeat)
+	RegisterPacketType(MsgTypeNotify, decodeNotify)
+	// AckPayload 是通用 ACK，挂在三个 ack type 下
+	RegisterPacketType(MsgTypeHandshakeAck, decodeAck)
+	RegisterPacketType(MsgTypeUploadAck, decodeAck)
+	RegisterPacketType(MsgTypeHeartbeatAck, decodeAck)
+}

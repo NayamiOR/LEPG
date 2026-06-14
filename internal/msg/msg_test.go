@@ -196,3 +196,85 @@ func TestNotifyPayloadTruncation(t *testing.T) {
 		})
 	}
 }
+
+func TestParseMsgRoundTrip(t *testing.T) {
+	factory := NewMsgFactory()
+
+	tests := []struct {
+		name    string
+		msgType uint8
+		packet  Packable
+	}{
+		{
+			name:    "handshake",
+			msgType: MsgTypeHandshake,
+			packet:  &HandshakePayload{FirmwareVersion: 1, Sn: "CLIENT001", Token: "token123456"},
+		},
+		{
+			name:    "upload",
+			msgType: MsgTypeUpload,
+			packet: &UploadPayload{Readings: []model.Reading{
+				{ID: 1, Device: "aaaa000000000001", Value: "23.5", DataType: model.DataTypeFloat32, Timestamp: 1700000000000},
+			}},
+		},
+		{
+			name:    "notify",
+			msgType: MsgTypeNotify,
+			packet:  &NotifyPayload{EventCode: 0x02, DeviceHash: "hash", Timestamp: 1, Severity: 1, Message: "offline", RawData: []byte{1, 2, 3}},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			m, err := factory.NewMsg(tt.msgType, tt.packet)
+			if err != nil {
+				t.Fatalf("NewMsg failed: %v", err)
+			}
+			parsed, err := ParseMsg(m)
+			if err != nil {
+				t.Fatalf("ParseMsg failed: %v", err)
+			}
+			if !reflect.DeepEqual(tt.packet, parsed) {
+				t.Errorf("round-trip mismatch\ngot:  %+v\nwant: %+v", parsed, tt.packet)
+			}
+		})
+	}
+}
+
+func TestParseMsgAckTypes(t *testing.T) {
+	factory := NewMsgFactory()
+	ackTypes := []struct {
+		name string
+		t    uint8
+	}{
+		{"handshakeAck", MsgTypeHandshakeAck},
+		{"uploadAck", MsgTypeUploadAck},
+		{"heartbeatAck", MsgTypeHeartbeatAck},
+	}
+	for _, at := range ackTypes {
+		t.Run(at.name, func(t *testing.T) {
+			original := &AckPayload{MsgID: 42, Code: Ok}
+			m, err := factory.NewMsg(at.t, original)
+			if err != nil {
+				t.Fatalf("NewMsg failed: %v", err)
+			}
+			parsed, err := ParseMsg(m)
+			if err != nil {
+				t.Fatalf("ParseMsg failed: %v", err)
+			}
+			got, ok := parsed.(*AckPayload)
+			if !ok {
+				t.Fatalf("expected *AckPayload, got %T", parsed)
+			}
+			if !reflect.DeepEqual(original, got) {
+				t.Errorf("mismatch\ngot:  %+v\nwant: %+v", got, original)
+			}
+		})
+	}
+}
+
+func TestParseMsgUnknownType(t *testing.T) {
+	m := &Msg{Type: 99, Payload: []byte{}}
+	if _, err := ParseMsg(m); err == nil {
+		t.Fatal("expected error for unknown packet type, got nil")
+	}
+}
