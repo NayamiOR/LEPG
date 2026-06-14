@@ -4,9 +4,7 @@ import (
 	"LEPG/internal/model"
 	"LEPG/internal/msg"
 	"LEPG/internal/server/cache"
-	"bytes"
 	"context"
-	"encoding/gob"
 	"fmt"
 	"log/slog"
 	"net"
@@ -39,6 +37,8 @@ func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store, publish
 	remoteAddr := conn.RemoteAddr().String()
 	slog.Info("handling connection", "remote_addr", remoteAddr)
 
+	factory := msg.NewMsgFactory()
+
 	// 第一步：等待握手消息
 	hsMsg, err := msg.DecodeFrame(conn)
 	if err != nil {
@@ -48,14 +48,20 @@ func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store, publish
 
 	if hsMsg.Type != msg.MsgTypeHandshake {
 		slog.Warn("expected handshake message", "remote_addr", remoteAddr, "got_type", hsMsg.Type)
-		sendHandshakeResponse(conn, msg.HandshakeFailed, "expected handshake")
+		sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.Failed)
 		return
 	}
 
-	hsPayload, err := msg.DecodeHandshakePayload(hsMsg.Payload)
+	parsed, err := msg.ParseMsg(&hsMsg)
 	if err != nil {
 		slog.Warn("invalid handshake payload", "remote_addr", remoteAddr, "error", err)
-		sendHandshakeResponse(conn, msg.HandshakeFailed, "malformed handshake")
+		sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.Failed)
+		return
+	}
+	hsPayload, ok := parsed.(*msg.HandshakePayload)
+	if !ok {
+		slog.Warn("invalid handshake payload", "remote_addr", remoteAddr, "payload", parsed)
+		sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.Failed)
 		return
 	}
 
@@ -70,18 +76,18 @@ func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store, publish
 
 	if matched == nil {
 		slog.Warn("unknown client SN", "remote_addr", remoteAddr, "sn", hsPayload.Sn)
-		sendHandshakeResponse(conn, msg.HandshakeBadSn, "unknown SN")
+		sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.BadSn)
 		return
 	}
 	if matched.Token != hsPayload.Token {
 		slog.Warn("token mismatch", "remote_addr", remoteAddr, "sn", hsPayload.Sn)
-		sendHandshakeResponse(conn, msg.HandshakeBadToken, "token mismatch")
+		sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.BadToken)
 		return
 	}
 
 	// 鉴权成功
 	slog.Info("client authenticated", "remote_addr", remoteAddr, "sn", hsPayload.Sn)
-	sendHandshakeResponse(conn, msg.HandshakeOK, "OK")
+	sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.Ok)
 
 	// 进入正常消息处理循环
 	messageCount := 1
@@ -108,14 +114,20 @@ func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store, publish
 			"payload_len", message.PayloadLen)
 
 		if message.Type == msg.MsgTypeUpload {
-			var readings []*model.Reading
-			dec := gob.NewDecoder(bytes.NewReader(message.Payload))
-			for {
-				var r model.Reading
-				if err := dec.Decode(&r); err != nil {
-					break
-				}
-				readings = append(readings, &r)
+			uploadParsed, err := msg.ParseMsg(&message)
+			if err != nil {
+				slog.Warn("invalid upload payload", "remote_addr", remoteAddr, "sn", hsPayload.Sn, "error", err)
+				continue
+			}
+			upload, ok := uploadParsed.(*msg.UploadPayload)
+			if !ok {
+				slog.Warn("invalid upload payload", "remote_addr", remoteAddr, "sn", hsPayload.Sn, "payload", uploadParsed)
+				continue
+			}
+
+			readings := make([]*model.Reading, len(upload.Readings))
+			for i := range upload.Readings {
+				readings[i] = &upload.Readings[i]
 			}
 			if len(readings) > 0 {
 				if err := s.SaveReadings(context.Background(), hsPayload.Sn, readings); err != nil {
@@ -141,11 +153,18 @@ func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store, publish
 	}
 }
 
-func sendHandshakeResponse(conn net.Conn, code uint8, message string) {
-	resp := &msg.HandshakeResponsePayload{Code: code, Message: message}
-	payload, _ := resp.Encode()
-	responseMsg := msg.New(msg.MsgTypeHandshake, payload)
-	responseMsg.Flags = msg.FlagResponse
-	encoded, _ := responseMsg.Encode()
-	conn.Write(encoded)
+func sendHandshakeResponse(conn net.Conn, factory *msg.MsgFactory, reqMsgID uint16, code uint8) {
+	resp, err := factory.NewMsg(msg.MsgTypeHandshakeAck, &msg.AckPayload{MsgID: reqMsgID, Code: code})
+	if err != nil {
+		slog.Error("failed to build handshake ack", "error", err)
+		return
+	}
+	encoded, err := resp.Encode()
+	if err != nil {
+		slog.Error("failed to encode handshake ack", "error", err)
+		return
+	}
+	if _, err := conn.Write(encoded); err != nil {
+		slog.Error("failed to send handshake ack", "error", err)
+	}
 }

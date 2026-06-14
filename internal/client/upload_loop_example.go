@@ -1,6 +1,7 @@
 package client
 
 import (
+	"LEPG/internal/model"
 	"LEPG/internal/msg"
 	"errors"
 	"fmt"
@@ -57,7 +58,13 @@ func UploadLoopExample(cfg *ClientConfig) error {
 		data := mockData[messageCount%len(mockData)]
 
 		// 创建消息
-		message := factory.NewMsg(0, msg.MsgTypeUpload, []byte(data))
+		message, err := factory.NewMsg(msg.MsgTypeUpload, &msg.UploadPayload{
+			Readings: []model.Reading{{Device: "mock", Value: data, Timestamp: 1}},
+		})
+		if err != nil {
+			slog.Error("failed to build message", "error", err)
+			continue
+		}
 
 		// 编码消息
 		encodedData, err := message.Encode()
