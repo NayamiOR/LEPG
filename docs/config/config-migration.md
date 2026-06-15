@@ -29,7 +29,7 @@ tags: [config, migration, reference]
 
 | 变更项 | 说明 |
 |--------|------|
-| `DataPath` 可配置 | 服务器端 `data_path` 现在可通过 Provider Chain 设置（原为硬编码） |
+| `PgConfig` 替代 `DataPath` | 服务端 `data_path` 替换为 `pg_*` 配置块（PostgreSQL 迁移），旧 `data_path` 标记为废弃 |
 | `sources` 白名单机制 | 每个字段显式声明允许的来源，未声明的不参与解析 |
 | 敏感字段保护 | `sn`、`token` 禁止通过 CLI flag 传入；`redis_password` 无默认值且 `init` 不生成 |
 

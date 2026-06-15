@@ -25,7 +25,18 @@ tags: [config, server, reference]
 |---------|------|--------|------|---------|------|
 | `port` | int | `8883` | 否 | file, flag, env, default | TCP 监听端口，范围 1-65535 |
 | `log_level` | string | `"info"` | 否 | file, env, default | 日志级别：`debug` / `info` / `warn` / `error` |
-| `data_path` | string | `"/var/cache/lepgs/lepgs.db"` | 否 | file, env, default | SQLite 数据库文件路径 |
+| `data_path` | string | `"/var/cache/lepgs/lepgs.db"` | 否 | file, env, default | [已废弃] 旧 SQLite 数据库路径，已迁移至 PostgreSQL |
+
+### PostgreSQL 设置
+
+| TOML 键 | 类型 | 默认值 | 必填 | 允许来源 | 说明 |
+|---------|------|--------|------|---------|------|
+| `pg_host` | string | `"127.0.0.1"` | 否 | file, env, default | PostgreSQL 主机地址 |
+| `pg_port` | int | `5432` | 否 | file, env, default | PostgreSQL 端口 |
+| `pg_user` | string | `"lepgs"` | 否 | file, env, default | PostgreSQL 用户名 |
+| `pg_password` | string | — | 否 | file, env | **敏感字段**，无默认值 |
+| `pg_dbname` | string | `"lepgs"` | 否 | file, env, default | PostgreSQL 数据库名 |
+| `pg_sslmode` | string | `"disable"` | 否 | file, env, default | SSL 模式：`disable` / `require` / `verify-ca` / `verify-full` |
 
 ### MQTT Broker 设置
 
@@ -67,7 +78,8 @@ description = "测试客户端1"
 |------|------|
 | `port` | 必须在 1-65535 范围内 |
 | `log_level` | 必须是 `debug`、`info`、`warn`、`error` 之一 |
-| `data_path` | 不能为空 |
+| `pg_host` | 不能为空 |
+| `pg_dbname` | 不能为空 |
 
 ---
 

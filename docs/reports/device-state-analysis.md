@@ -121,13 +121,13 @@ aliases: [设备状态记录实现状态分析报告]
 
 ```
 client 轮询 → model.Reading → UploadPayload.Readings（gob）→ server
-server: parse Upload → SQLiteStore.SaveReadings
+server: parse Upload → PostgresStore.SaveReadings
 ```
 
 - 接入点：[internal/server/server.go:128-151](../../internal/server/server.go#L128)，解析 `UploadPayload` 后调用 `s.SaveReadings(...)`。
 - 存储：[internal/server/cache/store.go](../../internal/server/cache/store.go) 的 `StoredReading`（含 `sn`/`device`/`device_name`/`point`/`point_name`/`value`/`quality`/`timestamp` 等）。
 - 建表：[internal/server/cache/migrations/001_init.go](../../internal/server/cache/migrations/001_init.go) 创建 `readings` 表，含索引 `idx_readings_sn_ts`、`idx_readings_dev_pt`。
-- 查询：[internal/server/cache/sqlite.go](../../internal/server/cache/sqlite.go) 的 `QueryReadings`，支持按 `sn`/`device`/时间范围过滤。
+- 查询：[internal/server/cache/postgres.go](../../internal/server/cache/postgres.go) 的 `QueryReadings`，支持按 `sn`/`device`/时间范围过滤。
 
 注意：记录的是**数值快照**，不是状态。但因为它携带了 `device`(hash) 和 `device_name`，所以**能从 readings 反推出"某网关下出现过哪些设备"**——这是目前 server 感知边缘设备存在的唯一途径。
 
@@ -136,7 +136,7 @@ server: parse Upload → SQLiteStore.SaveReadings
 server 侧现已具备设备目录能力：
 
 - `devices` 表（[002_devices.go](../../internal/server/cache/migrations/002_devices.go)）：字段 `sn` / `device_hash` / `device_name` / `type` / `first_seen` / `last_seen` / `status`，UNIQUE(sn, device_hash)。
-- `SaveReadings` 内自动 upsert（[sqlite.go](../../internal/server/cache/sqlite.go)）：每个 upload 批次去重后更新 `last_seen`，首次出现时记录 `first_seen`。
+- `SaveReadings` 内自动 upsert（[postgres.go](../../internal/server/cache/postgres.go)）：每个 upload 批次去重后更新 `last_seen`，首次出现时记录 `first_seen`。
 - `QueryDevices` 接口：按 `sn` 查询网关下所有设备，支持分页。
 - `type` 字段当前为可空——server 无法从 reading 获知连接类型(rtu/tcp/mqtt)，留待后续元数据上送填充。
 
@@ -165,14 +165,14 @@ server 侧现已具备设备目录能力：
   var publisher server.EventPublisher = new(server.NopPublisher)
   ```
 
-  即便数值已落库，`PublishDeviceReadings` 也被 `NopPublisher`（空实现）吞掉。所以 readings 目前**只进 SQLite、不进 MQTT**，下游订阅者（`device/{sn}/reading`）看不到任何数据。
+  即便数值已落库，`PublishDeviceReadings` 也被 `NopPublisher`（空实现）吞掉。所以 readings 目前**只进 PostgreSQL、不进 MQTT**，下游订阅者（`device/{sn}/reading`）看不到任何数据。
 
 ---
 
 ## 五、现状数据流
 
 ```
-                ┌─ SaveReadings → SQLite (readings 表)  ✅ 已落地
+                ┌─ SaveReadings → PostgreSQL (readings 表)  ✅ 已落地
 边缘设备 ─Modbus/MQTT→ client.Reading ─gob/Upload→ server
                 └─ PublishDeviceReadings              ❌ NopPublisher 吞掉
 
@@ -198,8 +198,8 @@ server 侧现已具备设备目录能力：
 
 2. **边缘设备注册表** ✅（已完成）
    - `devices` 迁移与表（`sn`/`device_hash`/`device_name`/`type`/`first_seen`/`last_seen`/`status`，UNIQUE(sn, device_hash)）——见 `internal/server/cache/migrations/002_devices.go`。
-   - `SaveReadings` 时按批次去重 upsert 设备行（first_seen 仅首次写入、last_seen 每次更新），`QueryDevices` 可按 SN 枚举网关下所有设备——见 `internal/server/cache/sqlite.go`。
-   - 测试覆盖：首次注册、重复更新、批内去重、多设备、跨网关隔离、空批次——见 `internal/server/cache/sqlite_test.go`。
+   - `SaveReadings` 时按批次去重 upsert 设备行（first_seen 仅首次写入、last_seen 每次更新），`QueryDevices` 可按 SN 枚举网关下所有设备——见 `internal/server/cache/postgres.go`。
+   - 测试覆盖：首次注册、重复更新、批内去重、多设备、跨网关隔离、空批次——见 `internal/server/cache/postgres_test.go`。
 
 3. **边缘设备离线检测 + Notify**
    - client：在 `ModbusDevicePolling` 内用 `OfflineThreshold` 计时，连续读取失败超过阈值 → 标记离线 → 通过 `MsgTypeNotify`(EventCode=0x02) 上送。

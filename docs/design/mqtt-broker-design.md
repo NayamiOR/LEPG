@@ -47,14 +47,14 @@ $SYS/broker/#                 # comqtt 内置系统主题
 ### 当前数据流
 
 ```
-Client → [TLV over TCP] → HandleConnection → gob.Decode → []Reading → SQLite
+Client → [TLV over TCP] → HandleConnection → gob.Decode → []Reading → PostgreSQL
 ```
 
 ### 目标数据流
 
 ```
 Client → [TLV over TCP] → HandleConnection → gob.Decode → []Reading
-                                                        ├→ SQLite（不变）
+                                                        ├→ PostgreSQL（不变）
                                                         └→ MqttPublisher.PublishDeviceReadings()
                                                            └→ broker.Publish("device/{SN}/reading", jsonPayload)
 ```
@@ -83,11 +83,11 @@ type MqttReading struct {
 
 | 方案 | 复杂度 | 数据安全性 |
 |------|--------|-----------|
-| A) 只记日志，不重试 | 低 | 丢失 MQTT 侧数据，SQLite 侧不受影响 |
+| A) 只记日志，不重试 | 低 | 丢失 MQTT 侧数据，PostgreSQL 侧不受影响 |
 | B) 失败写入本地重试队列 | 中 | 不丢数据，但需要额外 goroutine 和存储 |
-| C) 失败时回写 SQLite 标记，由后台任务补发 | 高 | 最可靠，但改表结构 |
+| C) 失败时回写 PostgreSQL 标记，由后台任务补发 | 高 | 最可靠，但改表结构 |
 
-**建议**：先用方案 A。SQLite 已经是完整数据源，MQTT 丢失的数据可以从 SQLite 补查。后续如需要可靠性，加一个简单的内存重试队列（带最大重试次数）即可。
+**建议**：先用方案 A。PostgreSQL 已经是完整数据源，MQTT 丢失的数据可以从 PostgreSQL 补查。后续如需要可靠性，加一个简单的内存重试队列（带最大重试次数）即可。
 
 ---
 
@@ -178,7 +178,7 @@ OnACLCheck(cl *mqtt.Client, topic string, write bool) bool
 
 | 场景 | QoS | 原因 |
 |------|-----|------|
-| reading 数据 | QoS 0 | 实时数据，丢一两帧无所谓，SQLite 有完整记录 |
+| reading 数据 | QoS 0 | 实时数据，丢一两帧无所谓，PostgreSQL 有完整记录 |
 | status（在线/离线） | QoS 1 + Retain | 状态消息不能丢，新订阅者需要立即拿到当前状态 |
 | event（告警） | QoS 1 | 告警不能丢 |
 | command（下行） | QoS 1 | 指令不能丢 |
@@ -213,17 +213,17 @@ OnACLCheck(cl *mqtt.Client, topic string, write bool) bool
 
 ---
 
-## 7. 与 SQLite 缓存的协作
+## 7. 与 PostgreSQL 存储的协作
 
-当前 SQLite 是唯一持久化存储，MQTT 是实时数据通道。两者关系：
+当前 PostgreSQL 是唯一持久化存储，MQTT 是实时数据通道。两者关系：
 
 ```
 Client → TLV → HandleConnection
-                  ├→ SQLite.SaveReadings()    （持久化，可靠）
+                  ├→ PostgresStore.SaveReadings()    （持久化，可靠）
                   └→ MqttPublisher.Publish()   （实时推送，尽力而为）
 ```
 
-SQLite 不依赖 MQTT，MQTT 失败不影响数据完整性。
+SQLite（客户端缓存）不依赖 MQTT，MQTT 失败不影响数据完整性。
 
 ### 后续可扩展：MQTT 消息持久化
 

@@ -20,8 +20,13 @@ log_level = "info"
 # TCP 监听端口
 port = 8883
 
-# SQLite 数据库文件路径
-data_path = "/var/cache/lepgs/lepgs.db"
+# PostgreSQL 连接配置
+pg_host = "127.0.0.1"
+pg_port = 5432
+pg_user = "lepgs"
+pg_password = ""                # 建议通过环境变量 LEPG_PG_PASSWORD 设置
+pg_dbname = "lepgs"
+pg_sslmode = "disable"
 
 # ---- MQTT Broker 配置 ----
 mqtt_tcp = "127.0.0.1:1883"     # TCP 监听地址

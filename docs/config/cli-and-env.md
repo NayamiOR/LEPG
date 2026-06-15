@@ -76,7 +76,13 @@ lepgc [command]
 |---------|--------|------|------|
 | `PORT` | `port` | int | `PORT=9999` |
 | `LOG_LEVEL` | `log_level` | string | `LOG_LEVEL=debug` |
-| `DATA_PATH` | `data_path` | string | `DATA_PATH=/data/lepgs.db` |
+| `DATA_PATH` | `data_path` | string | `DATA_PATH=/data/lepgs.db` | [已废弃] |
+| `PG_HOST` | `pg_host` | string | `PG_HOST=postgres` |
+| `PG_PORT` | `pg_port` | int | `PG_PORT=5433` |
+| `PG_USER` | `pg_user` | string | `PG_USER=lepgs` |
+| `PG_PASSWORD` | `pg_password` | string | `PG_PASSWORD=***` |
+| `PG_DBNAME` | `pg_dbname` | string | `PG_DBNAME=lepgs` |
+| `PG_SSLMODE` | `pg_sslmode` | string | `PG_SSLMODE=require` |
 | `MQTT_TCP` | `mqtt_tcp` | string | `MQTT_TCP=0.0.0.0:1883` |
 | `MQTT_WS` | `mqtt_ws` | string | `MQTT_WS=0.0.0.0:8083` |
 | `REDIS_ADDR` | `redis_addr` | string | `REDIS_ADDR=redis:6379` |

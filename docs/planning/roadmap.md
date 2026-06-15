@@ -16,7 +16,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 ```
 现场设备 (Modbus/MQTT) → 客户端 → [TLV over TCP] → 服务端 → MQTT Broker → 外部消费者
                               ↓                              ↓
-                          SQLite 缓存                    SQLite 存储
+                          SQLite 缓存                 PostgreSQL 存储
                        (断点续传/离线重传)
 ```
 
@@ -56,8 +56,8 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 |------|--------|----------|
 | **TCP 监听 + 连接管理** | ✅ 100% | 每连接一个 goroutine |
 | **握手认证** | ✅ 100% | SN/Token 静态校验，返回 OK/BadSn/BadToken |
-| **数据接收 + SQLite 存储** | ✅ 100% | gob 解码 Upload 消息，存入 SQLite |
-| **SQLite 查询** | ✅ 100% | 按 SN、设备名、时间范围过滤 |
+| **数据接收 + PostgreSQL 存储** | ✅ 100% | gob 解码 Upload 消息，存入 PostgreSQL |
+| **PostgreSQL 查询** | ✅ 100% | 按 SN、设备名、时间范围过滤 |
 | **连接管理器** | ✅ 100% | 内存版 + Redis 版均实现（Redis 版未在主流程启用） |
 | **内嵌 MQTT Broker** | ⚠️ ~50% | comqtt v2，TCP + WS 监听正常；无认证（AllowHook），无 ACL |
 | **数据桥接（TLV→MQTT）** | ❌ ~20% | `MqttPublisher` 已实现但未接入，当前使用 `NopPublisher`，**零数据输出** |
@@ -75,7 +75,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ## 二、关键问题（按影响排序）
 
-1. **服务端数据桥接断路** — 最核心的功能缺口。服务端接收了数据、存入了 SQLite，但 MQTT Broker 对外发布的流量为零。`MqttPublisher` 已写好，只需接入替换 `NopPublisher` 并实现 Reading→JSON 序列化。
+1. **服务端数据桥接断路** — 最核心的功能缺口。服务端接收了数据、存入了 PostgreSQL，但 MQTT Broker 对外发布的流量为零。`MqttPublisher` 已写好，只需接入替换 `NopPublisher` 并实现 Reading→JSON 序列化。
 2. **客户端 MQTT 不校验数据** — `handleMqttReading` 接受任何 SN 和点位，不检查是否在 `MqttConfig` 中注册。
 3. **无 MQTT 测试** — 整个 MQTT 数据路径零自动化测试。
 4. **Modbus 解析逻辑待验证** — `modbus.go:74` 有 TODO 注释提示需要检查纠正。
@@ -93,7 +93,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 | 数据接收 | `server.go` | gob 解码 → `SaveReadings` |
 | MQTT Broker | `mqtt.go` | comqtt v2，TCP + WS |
 | Publisher 接口 | `publisher.go` | `NopPublisher` / `MqttPublisher` |
-| SQLite 存储 | `cache/sqlite.go` | 含 `QueryReadings` 过滤查询 |
+| PostgreSQL 存储 | `cache/postgres.go` | 含 `QueryReadings` 过滤查询 |
 | 连接管理器 | `cache/connections/` | 内存版 + Redis 版 |
 
 ### 待实现
