@@ -4,11 +4,15 @@ import (
 	"LEPG/internal/model"
 	"LEPG/internal/msg"
 	"LEPG/internal/server/cache"
+	"LEPG/internal/server/cache/connections"
+	"LEPG/internal/utils"
 	"context"
 	"fmt"
 	"log/slog"
 	"net"
 	"time"
+
+	"github.com/google/uuid"
 )
 
 // heartbeatTimeout is the server-side read deadline for detecting silent
@@ -16,7 +20,7 @@ import (
 const heartbeatTimeout = 90 * time.Second
 
 // ReceiveLoop 接收循环
-func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher) error {
+func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher, connMgr connections.ConnectionManager) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
 		return err
@@ -32,11 +36,11 @@ func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher) err
 		}
 
 		slog.Info("accept a connection", "remote_addr", conn.RemoteAddr().String())
-		go HandleConnection(conn, cfg, s, publisher)
+		go HandleConnection(conn, cfg, s, publisher, connMgr)
 	}
 }
 
-func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher EventPublisher) {
+func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher EventPublisher, connMgr connections.ConnectionManager) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
@@ -93,6 +97,24 @@ func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher
 	// 鉴权成功
 	slog.Info("client authenticated", "remote_addr", remoteAddr, "sn", hsPayload.Sn)
 	sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.Ok)
+
+	// 注册网关在线状态
+	connInfo := &connections.Connection{
+		DeviceHash:    hsPayload.Sn,
+		ConnectionID:  uuid.NewString(),
+		ClientIP:      remoteAddr,
+		ConnectedAt:   utils.NewTimestamp(),
+		LastHeartbeat: utils.NewTimestamp(),
+	}
+	if err := connMgr.RegisterConnection(connInfo); err != nil {
+		slog.Warn("failed to register connection", "sn", hsPayload.Sn, "error", err)
+	}
+	// 连接断开时清理
+	defer func() {
+		if err := connMgr.RemoveConnection(hsPayload.Sn); err != nil {
+			slog.Warn("failed to remove connection", "sn", hsPayload.Sn, "error", err)
+		}
+	}()
 
 	// 握手成功后开启心跳读超时；每收到一条消息即刷新
 	readTimeout := heartbeatTimeout
@@ -167,6 +189,9 @@ func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher
 				}
 			}
 		case msg.MsgTypeHeartbeat:
+			if err := connMgr.UpdateHeartbeat(hsPayload.Sn); err != nil {
+				slog.Warn("failed to update heartbeat", "sn", hsPayload.Sn, "error", err)
+			}
 			sendAck(conn, factory, msg.MsgTypeHeartbeatAck, message.MsgID, msg.Ok)
 		default:
 			slog.Warn("unexpected message type",

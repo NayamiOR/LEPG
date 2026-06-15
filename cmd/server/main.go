@@ -5,6 +5,7 @@ import (
 	logging "LEPG/internal/log"
 	"LEPG/internal/server"
 	serverstore "LEPG/internal/server/cache"
+	"LEPG/internal/server/cache/connections"
 	"context"
 	"fmt"
 	"log/slog"
@@ -12,6 +13,7 @@ import (
 	"path/filepath"
 
 	"github.com/SladkyCitron/slogcolor"
+	"github.com/redis/go-redis/v9"
 	"github.com/spf13/cobra"
 )
 
@@ -90,7 +92,20 @@ var runCmd = &cobra.Command{
 		// TODO: 数据桥接阶段替换为 server.NewMqttPublisher(broker)
 		var publisher server.EventPublisher = new(server.NopPublisher)
 
-		if err := server.ReceiveLoop(cfg, store, publisher); err != nil {
+		// Redis 连接状态管理
+		rdb := redis.NewClient(&redis.Options{
+			Addr:     cfg.Redis.Addr,
+			Password: cfg.Redis.Password,
+			DB:       cfg.Redis.DB,
+		})
+		if err := rdb.Ping(context.Background()).Err(); err != nil {
+			fmt.Printf("Failed to connect to Redis at %s: %v\n", cfg.Redis.Addr, err)
+			os.Exit(1)
+		}
+		defer rdb.Close()
+		connMgr := connections.NewRedisConnectionManager(rdb)
+
+		if err := server.ReceiveLoop(cfg, store, publisher, connMgr); err != nil {
 			fmt.Printf("Server error: %v\n", err)
 			os.Exit(1)
 		}

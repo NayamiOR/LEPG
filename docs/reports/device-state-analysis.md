@@ -1,6 +1,6 @@
 ---
 title: 设备状态记录实现状态分析报告
-description: 基于 main/f32820a 的 LEPG 设备状态记录现状——网关与边缘设备的「数值」通路已通、「状态/存活」通路全断
+description: 基于 main 分支的 LEPG 设备状态记录现状——网关在线/离线已接线（Redis），边缘设备状态/存活通路仍全断
 type: report
 tags: [device-state, connection, report, mqtt, cache]
 aliases: [设备状态记录实现状态分析报告]
@@ -9,16 +9,16 @@ aliases: [设备状态记录实现状态分析报告]
 # LEPG 设备状态记录实现状态分析报告
 
 > 适用范围：`internal/server/` 及其数据/连接基础设施（`cache/`、`cache/connections/`、`cache/migrations/`），并涵盖上游消息协议层 `internal/msg/`、数据模型 `internal/model/` 与客户端设备定义 `internal/client/`。
-> 状态基准：`main` 分支，提交 `f32820a`。
+> 状态基准：`main` 分支，提交 `88f340b` 及后续（网关状态接线已完成）。
 
 ## 一、总体结论（先读这段）
 
 | 能力 | 定义层 | 实现层 | 接入层 | 状态 |
 |------|:---:|:---:|:---:|------|
-| 网关在线/离线记录 | ✅ | ✅ | ❌ | **基础设施齐全，但完全未接线** |
-| 网关接入登记（RegisterConnection） | ✅ | ✅ | ❌ | 握手成功处未调用 |
-| 心跳刷新（UpdateHeartbeat） | ✅ | ✅ | ❌ | server 无心跳分支，从不调用 |
-| 网关断开清理（RemoveConnection） | ✅ | ✅ | ❌ | `defer conn.Close()` 是唯一清理动作 |
+| 网关在线/离线记录 | ✅ | ✅ | ✅ | **已接线（Redis），启动探活、注册/心跳/清理全贯通** |
+| 网关接入登记（RegisterConnection） | ✅ | ✅ | ✅ | 握手成功后调用，SN 作 DeviceHash，uuid 作 ConnectionID |
+| 心跳刷新（UpdateHeartbeat） | ✅ | ✅ | ✅ | `case MsgTypeHeartbeat` 分支已接入 `connMgr.UpdateHeartbeat` |
+| 网关断开清理（RemoveConnection） | ✅ | ✅ | ✅ | 握手成功后注册 defer，连接退出时自动清理 Redis key |
 | 同 SN 互斥 / 全局连接表 | ❌ | ❌ | ❌ | 无 |
 | MQTT 上下线通知（`device/{sn}/status`） | ✅ | ❌ | ❌ | topic 已定义，从未发布 |
 | Notify 协议（0x07 上线/离线/故障事件） | ✅ | ✅ | ❌ | 两端均不发不收 |
@@ -27,7 +27,7 @@ aliases: [设备状态记录实现状态分析报告]
 | 边缘设备在线/离线检测 | ⚠️ | ❌ | ❌ | client 有 `OfflineThreshold`/`EnableMonitor` 字段，但轮询循环不消费 |
 | 设备元数据（型号/连接/点位）上送 | ❌ | ❌ | ❌ | 设备定义只存在于 client 配置，server 无感知 |
 
-**一句话总结**：边缘设备的**数值**这条记录通路是通的（readings 表）；但无论是网关还是边缘设备的**状态/存活**这条通路，都是"零件造好了（`ConnectionManager`、`NotifyPayload`、`OfflineThreshold` 字段）却没装上车"——server 侧对设备状态实际上一无所知。
+**一句话总结**：边缘设备的**数值**这条记录通路是通的（readings 表）；**网关状态**（在线/离线/心跳）已通过 `RedisConnectionManager` 接线落地到 Redis（key `lepg:device:{SN}`）；边缘设备的**状态/存活**通路仍是"零件造好了（`NotifyPayload`、`OfflineThreshold` 字段）却没装上车"——server 侧对边缘设备状态仍无感知。
 
 ---
 
@@ -42,7 +42,7 @@ aliases: [设备状态记录实现状态分析报告]
 
 ---
 
-## 三、网关状态记录（基础设施齐全，但完全未接线）
+## 三、网关状态记录（已接线 ✅）
 
 ### 3.1 基础设施：双实现齐全
 
@@ -76,25 +76,19 @@ aliases: [设备状态记录实现状态分析报告]
 
 即"零件"层面：结构体字段齐全（已预留 `ConnectedAt`/`LastHeartbeat`），两套后端（内存/分布式）都造好了。
 
-### 3.2 但全项目无人使用
+### 3.2 已接入（main 分支，commit 88f340b 及后续）
 
-`ConnectionManager` 是典型的"造好了零件但还没装上车"。证据：
+`ConnectionManager` 已接入 server 连接生命周期。接入点：
 
-- [internal/server/server.go](../../internal/server/server.go) 的核心函数签名里**根本没有它**：
+- [internal/server/server.go](../../internal/server/server.go) 的 `ReceiveLoop` 与 `HandleConnection` 已增加 `connMgr connections.ConnectionManager` 参数，从 `main.go` 注入 `RedisConnectionManager`。
 
-  ```go
-  func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher) error
-  func HandleConnection(conn net.Conn, clients []ClientDef, s cache.Store, publisher EventPublisher)
-  ```
+- 握手鉴权成功后（`sendHandshakeResponse` 之后）：构建 `Connection`（`DeviceHash`=`hsPayload.Sn`、`ConnectionID`=`uuid.NewString()`、`ClientIP`=`remoteAddr`），调用 `connMgr.RegisterConnection`，并注册 `defer connMgr.RemoveConnection(hsPayload.Sn)` 确保断开时清理。注册失败为非致命（记 warn）。
 
-  传入的是 `cache.Store`（readings 存储）与 `EventPublisher`，**没有 ConnectionManager**。
+- 消息循环的 `case msg.MsgTypeHeartbeat` 分支（[server.go:191](../../internal/server/server.go#L191)）：在发送心跳 ACK 前调用 `connMgr.UpdateHeartbeat(hsPayload.Sn)`，失败为非致命（记 warn）。
 
-- 握手鉴权成功（[server.go:89-90](../../internal/server/server.go#L89)）：仅打日志 `slog.Info("client authenticated", ...)`，**不调用 `RegisterConnection`**。
-- 消息循环（[server.go:94-153](../../internal/server/server.go#L94)）：只有 `MsgTypeUpload` 一个分支，**没有 `MsgTypeHeartbeat` 分支**，`UpdateHeartbeat` 永不触发（与 [[handshake-heartbeat-analysis]] 第四节"server 不处理心跳"一致）。
-- 连接断开：[server.go:35](../../internal/server/server.go#L35) 的 `defer conn.Close()` 是**唯一清理动作**，不调用 `RemoveConnection`、不发任何离线事件。
-- [cmd/server/main.go](../../cmd/server/main.go)：**不实例化** `ConnectionManager`，也不创建 Redis client（`RedisConfig` 同样定义了却无人使用）。
+- [cmd/server/main.go](../../cmd/server/main.go)：从 `cfg.Redis` 构建 `redis.NewClient`，启动时 `Ping` 探活（失败则 `os.Exit(1)`），创建 `connections.NewRedisConnectionManager(rdb)`，传入 `ReceiveLoop`。
 
-后果：网关在线/离线在 server 的内存与持久层中**均无任何记录**。状态只活在某个活着的 goroutine 里，goroutine 一退就彻底消失。无法回答"当前哪些网关在线""某网关何时上线""它多久没心跳了"这类基本问题。
+即网关的在线/离线记录已通过 Redis（key `lepg:device:{SN}`）落地，`ConnectedAt` / `LastHeartbeat` 会随连接生命周期自动更新。可回答"当前哪些网关在线""某网关何时上线""它多久没心跳了"等问题（通过 `redis-cli KEYS "lepg:device:*"` 或后续查询接口）。
 
 ### 3.3 出口通道也全是空的
 
@@ -123,7 +117,7 @@ aliases: [设备状态记录实现状态分析报告]
 
 ### 4.1 数值记录：已实现并接线 ✅
 
-这是目前**唯一真正落地**的设备相关记录：
+边缘设备数值是目前**已落地**的设备相关记录之一（另一项是网关在线/离线记录，见 §3.2）：
 
 ```
 client 轮询 → model.Reading → UploadPayload.Readings（gob）→ server
@@ -176,15 +170,17 @@ server 侧没有任何"设备目录"概念：
 ## 五、现状数据流
 
 ```
-                ┌─ SaveReadings → SQLite (readings 表)  ✅ 唯一落地
+                ┌─ SaveReadings → SQLite (readings 表)  ✅ 已落地
 边缘设备 ─Modbus/MQTT→ client.Reading ─gob/Upload→ server
                 └─ PublishDeviceReadings              ❌ NopPublisher 吞掉
 
-网关上下线     ──×──  无任何记录 / 无 Register / Remove / 无 MQTT status   ❌
+网关上下线     ──✅──  握手 → RegisterConnection → Redis (lepg:device:{SN})
+                                        心跳 → UpdateHeartbeat → 刷新 last_heartbeat
+                                        断开 → RemoveConnection → DEL key            ✅
 边缘设备上下线 ──×──  无任何记录 / 无离线判定 / 无 Notify                 ❌
 ```
 
-简言之：只有"边缘设备的数值"这一条线落地为 `readings` 表；其余所有"状态/存活/元数据"通路全部断裂。
+简言之："边缘设备的数值"（readings）+ "网关在线/离线"（Redis `lepg:device:*`）两条线已落地；"边缘设备状态/存活/元数据"通路仍断裂。
 
 ---
 
@@ -192,11 +188,11 @@ server 侧没有任何"设备目录"概念：
 
 按建议优先级：
 
-1. **网关状态接线**（最低成本、收益最大）
-   - `cmd/server/main.go` 创建 `ConnectionManager`（先用 `MemoryConnectionManager`，Redis 待分布式部署再切）。
-   - `HandleConnection` 鉴权成功 → `RegisterConnection`（`DeviceHash` 用 SN 的 hash 或 SN 本身）；断开 → `RemoveConnection`。
-   - 接入心跳：依赖 [[handshake-heartbeat-analysis]] 第六节"心跳落地"先行（client 定时发心跳 + server 增 `MsgTypeHeartbeat` 分支），心跳到达 → `UpdateHeartbeat`。
-   - 补 `ListConnections` 的查询出口（HTTP/调试接口），让"在线网关列表"可观测。
+1. **网关状态接线** ✅（已完成）
+   - `cmd/server/main.go` 从 `RedisConfig` 构建 `redis.Client`，启动 Ping 探活，创建 `RedisConnectionManager` 并注入 `ReceiveLoop`。
+   - `HandleConnection` 鉴权成功 → `RegisterConnection`（`DeviceHash`=SN、`ConnectionID`=uuid）；断开 → defer `RemoveConnection`。
+   - 心跳接入：`case MsgTypeHeartbeat` 分支 → `UpdateHeartbeat`（刷新 `last_heartbeat`）。
+   - 待补：`ListConnections` 的查询出口（HTTP/调试接口），让"在线网关列表"可观测。
 
 2. **边缘设备注册表**
    - 新增 `devices` 迁移与表（`sn`/`device_hash`/`device_name`/`type`/`first_seen`/`last_seen`/`status`...）。
