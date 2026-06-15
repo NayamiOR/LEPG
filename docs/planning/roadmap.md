@@ -66,7 +66,6 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 | 功能 | 说明 |
 |------|------|
-| **心跳协议** | `MsgTypeHeartbeat` 已定义，无发送/接收/超时逻辑 |
 | **消息通知协议** | `MsgTypeNotify` 已定义，无处理逻辑 |
 | **MQTT 认证/ACL** | 设计文档完整，代码未实现 |
 | **TLS/WSS 加密隧道** | TODO 中列出 |
@@ -104,7 +103,6 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 | P1 | **数据桥接** | Reading→JSON 序列化，`MqttPublisher` 接入替换 `NopPublisher` | [[mqtt-broker-design]] §2 |
 | P2 | **MQTT 认证** | 自定义 AuthHook，MQTT username/password 映射 SN/Token | [[mqtt-broker-design]] §3 |
 | P3 | **ACL 规则 + QoS 分级** | 设备只能访问自己 SN 的 Topic；reading QoS 0、status QoS 1 + Retain | [[mqtt-broker-design]] §4-5 |
-| P3 | **心跳超时检测** | 客户端长时间无消息则断开连接 | |
 | P3 | **设备上下线通知** | 发布 `device/{SN}/status`（Retain），新订阅者立即获取状态 | |
 | P4 | **性能测试** | 100+ 连接、1000 msg/s 吞吐、24h 稳定性 | [[mqtt-broker-design]] §6 |
 | P5 | **MQTT 消息持久化** | Bolt Hook，Broker 重启后恢复 session/retained message | [[mqtt-broker-design]] §7 |
@@ -167,9 +165,9 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 | 任务 | 文件 | 说明 |
 |------|------|------|
-| 客户端定时发送心跳 | `internal/client/client.go` | `MsgTypeHeartbeat` |
-| 服务端检测心跳超时 | `internal/server/server.go` | 超时关闭连接 |
-| 设备上线/离线 MQTT 通知 | `internal/server/server.go` | `device/{sn}/status`（QoS 1 + Retain） |
+| ~~客户端定时发送心跳~~ ✅ | `internal/client/client.go` | `MsgTypeHeartbeat` + 读写分离 + 重连 |
+| ~~服务端检测心跳超时~~ ✅ | `internal/server/server.go` | `SetReadDeadline` 超时关闭连接 |
+| 设备上线/离线 MQTT 通知 | `internal/server/server.go` | `device/{sn}/status`（QoS 1 + Retain）—— 待实现 |
 
 **验证**：设备断开后 status Topic 收到离线消息；重连后收到在线消息
 

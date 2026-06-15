@@ -13,6 +13,12 @@ import (
 	"time"
 )
 
+// Heartbeat timing, fixed at compile time (not user-configurable).
+const (
+	heartbeatInterval = 30 * time.Second
+	heartbeatTimeout  = 90 * time.Second
+)
+
 func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 	slog.Info("Client configuration", "config", cfg)
 
@@ -125,11 +131,31 @@ func consumeAndWrite(ctx context.Context, ch <-chan model.Reading, store cache.S
 
 func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
 	slog.Info("Upload loop started")
+	retryInterval := time.Duration(cfg.RetryInterval) * time.Millisecond
 
+	for { // reconnect loop
+		err := runSession(ctx, cfg, store)
+		if ctx.Err() != nil {
+			slog.Info("Upload loop stopped")
+			return
+		}
+		slog.Warn("session ended, reconnecting", "error", err)
+		select {
+		case <-ctx.Done():
+			return
+		case <-time.After(retryInterval):
+		}
+	}
+}
+
+// runSession establishes a single connection session: dial → handshake → run the
+// read/write loop. It returns an error (non-nil unless ctx is canceled) so the
+// caller can reconnect. Writes (upload + heartbeat) happen in this goroutine;
+// reads (server messages + timeout detection) happen in a dedicated readLoop.
+func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store) error {
 	conn, err := dialWithRetry(ctx, cfg)
 	if err != nil {
-		slog.Error("failed to connect after all retries", "error", err)
-		return
+		return fmt.Errorf("connect: %w", err)
 	}
 	defer conn.Close()
 
@@ -138,24 +164,37 @@ func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
 	factory := msg.NewMsgFactory()
 
 	if err := performHandshake(conn, cfg, factory); err != nil {
-		slog.Error("handshake failed", "error", err)
-		return
+		return fmt.Errorf("handshake: %w", err)
 	}
 
 	slog.Info("handshake successful")
 
-	const maxPayloadSize = 65535
+	// Read goroutine: drains server messages (HeartbeatAck) and enforces the
+	// read deadline. Closing connDead signals the writer loop to reconnect.
+	connDead := make(chan struct{})
+	go readLoop(conn, connDead)
+
+	hbTicker := time.NewTicker(heartbeatInterval)
+	defer hbTicker.Stop()
+
 	pollInterval := time.Duration(cfg.UploadInterval) * time.Millisecond
-	timer := time.NewTimer(0) // trigger immediately on first iteration
-	defer timer.Stop()
+	uploadTimer := time.NewTimer(0) // trigger immediately on first iteration
+	defer uploadTimer.Stop()
+
+	const maxPayloadSize = 65535
 
 	for {
 		select {
 		case <-ctx.Done():
-			slog.Info("Upload loop stopped")
-			return
-		case <-timer.C:
-			timer.Reset(pollInterval)
+			return nil
+		case <-connDead:
+			return fmt.Errorf("connection lost (read timeout or closed)")
+		case <-hbTicker.C:
+			if err := sendHeartbeat(conn, factory); err != nil {
+				return fmt.Errorf("heartbeat: %w", err)
+			}
+		case <-uploadTimer.C:
+			uploadTimer.Reset(pollInterval)
 
 			readings, err := store.LoadPendingReadings(ctx, cfg.UploadBatchSize)
 			if err != nil {
@@ -167,11 +206,44 @@ func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
 			}
 
 			if err := uploadReadings(ctx, conn, store, factory, readings, maxPayloadSize); err != nil {
-				slog.Error("Upload failed", "error", err)
-				return
+				return fmt.Errorf("upload: %w", err)
 			}
 		}
 	}
+}
+
+// readLoop continuously reads frames from the server. Each successful read
+// implicitly refreshes the read deadline (set before every DecodeFrame call);
+// as long as the server keeps responding (e.g. HeartbeatAck), no timeout fires.
+// On timeout or any read error it closes dead so the writer loop reconnects.
+func readLoop(conn net.Conn, dead chan<- struct{}) {
+	defer close(dead)
+	readTimeout := heartbeatTimeout
+	for {
+		if err := conn.SetReadDeadline(time.Now().Add(readTimeout)); err != nil {
+			return
+		}
+		m, err := msg.DecodeFrame(conn)
+		if err != nil {
+			return
+		}
+		slog.Debug("received message from server", "type", m.Type, "msg_id", m.MsgID)
+	}
+}
+
+func sendHeartbeat(conn net.Conn, factory *msg.MsgFactory) error {
+	hbMsg, err := factory.NewMsg(msg.MsgTypeHeartbeat, &msg.HeartbeatPayload{})
+	if err != nil {
+		return fmt.Errorf("build: %w", err)
+	}
+	encoded, err := hbMsg.Encode()
+	if err != nil {
+		return fmt.Errorf("encode: %w", err)
+	}
+	if _, err := conn.Write(encoded); err != nil {
+		return fmt.Errorf("write: %w", err)
+	}
+	return nil
 }
 
 func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, factory *msg.MsgFactory, readings []*cache.CachedReading, maxPayloadSize int) error {

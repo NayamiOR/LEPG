@@ -1,6 +1,6 @@
 ---
 title: 握手与心跳逻辑分析报告
-description: 基于 main/f32820a 的 LEPG 握手鉴权（已实现）与心跳协议（协议就绪、业务未接入）现状分析
+description: LEPG 握手鉴权与心跳协议现状分析（握手/心跳/超时检测/运行时重连均已实现）
 type: report
 tags: [handshake, heartbeat, report, connection, auth]
 aliases: [握手与心跳逻辑分析报告]
@@ -9,7 +9,7 @@ aliases: [握手与心跳逻辑分析报告]
 # LEPG Server 与 Client 握手/心跳逻辑分析报告
 
 > 适用范围：`internal/server/` 与 `internal/client/`，并涵盖其依赖的消息协议层 `internal/msg/`。
-> 状态基准：`main` 分支，提交 `f32820a`。
+> 状态基准：`main` 分支（心跳/超时检测/运行时重连已落地，见 [[roadmap]] Phase 3）。
 
 ## 一、总体结论（先读这段）
 
@@ -17,14 +17,14 @@ aliases: [握手与心跳逻辑分析报告]
 |------|:---:|:---:|------|
 | 握手（Handshake / HandshakeAck） | ✅ | ✅ | **已完整实现** |
 | 鉴权（SN + Token） | ✅ | ✅ | **已实现**（白名单线性匹配） |
-| 心跳（Heartbeat / HeartbeatAck） | ✅ | ❌ | **协议就绪，业务未接入** |
-| 心跳超时检测 | — | ❌ | **未实现**（无 ReadDeadline / 无计时器） |
-| 连接状态机 | — | ❌ | **未实现**（状态隐含在执行流中） |
+| 心跳（Heartbeat / HeartbeatAck） | ✅ | ✅ | **已实现**（Client 定时发，Server 回 Ack） |
+| 心跳超时检测 | — | ✅ | **已实现**（两端 `SetReadDeadline`，超时即断开/重连） |
+| 连接状态机 | — | ❌ | **未实现**（状态隐含在执行流中，当前无需求，见 [[roadmap]]） |
 | 首次连接重试 | — | ✅ | **已实现**（指数退避，上限 60s） |
-| 运行时断连重连 | — | ❌ | **未实现**（断连即退出） |
+| 运行时断连重连 | — | ✅ | **已实现**（`runSession` 失败后进入重连循环） |
 | ConnectionManager | ✅ | ❌ | **已定义并实现，但未接入** |
 
-**一句话总结**：握手这条路是通的、可用的；心跳这条路只修好了"路标（协议定义）"和"车辆（编解码）"，但两端都没有发车，也没有看表（超时检测）。
+**一句话总结**：握手与心跳链路均已打通——Client 定时发心跳、Server 回 Ack、双向 `SetReadDeadline` 超时检测、Client 运行时断连自动重连。尚未落地的是 ConnectionManager 接入与 MQTT 上下线通知（见 [[roadmap]] Phase 3 剩余项）。
 
 ---
 
@@ -179,7 +179,7 @@ sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.Ok)            // Code=1
 
 ---
 
-## 四、心跳流程（协议层就绪，业务层未接入）
+## 四、心跳流程（已实现）
 
 ### 4.1 协议层：已完备
 
@@ -188,32 +188,53 @@ sendHandshakeResponse(conn, factory, hsMsg.MsgID, msg.Ok)            // Code=1
 - `decodeHeartbeat` 与 `decodeAck`（用于 HeartbeatAck）已在 `init()` 注册。
 - 即：**心跳消息可以被正确地创建、发送、接收、解析**。
 
-### 4.2 Server 端：不处理心跳
+### 4.2 Server 端：心跳分支 + 读超时
 
-`HandleConnection` 的消息循环（行 94–153）**只识别 `MsgTypeUpload`**：
+`HandleConnection` 握手成功后立即开启读超时，消息循环用 `switch` 分发，收到 `MsgTypeHeartbeat` 即回 `HeartbeatAck`，并刷新读 deadline：
 
 ```go
+// 握手成功后开启心跳读超时；每收到一条消息即刷新
+readTimeout := heartbeatTimeout
+conn.SetReadDeadline(time.Now().Add(readTimeout))
+
 for {
     message, err := msg.DecodeFrame(conn)
-    if err != nil { ...; return }
-    // 只有这一个分支：
-    if message.Type == msg.MsgTypeUpload { ... 处理上传 ... }
-    // 没有 if message.Type == msg.MsgTypeHeartbeat 的分支
+    if err != nil {
+        if netErr, ok := err.(net.Error); ok && netErr.Timeout() {
+            // 心跳超时，关闭连接
+        }
+        return
+    }
+    conn.SetReadDeadline(time.Now().Add(readTimeout)) // 收到任何消息即刷新
+    switch message.Type {
+    case msg.MsgTypeUpload:    // 处理上传
+    case msg.MsgTypeHeartbeat: // sendAck(HeartbeatAck, MsgID, Ok)
+    default:                   // 警告未知类型
+    }
 }
 ```
 
-后果：若 Client 真发来心跳，Server 仅打一条 `"received message" type=heartbeat` 日志，**不会回复 HeartbeatAck，不会更新任何心跳时间戳**。
+`sendHandshakeResponse` 与心跳回应共用抽出的通用 `sendAck(conn, factory, ackType, reqMsgID, code)`。超时阈值是编译期常量 `heartbeatTimeout`（90s），定义于 [internal/server/server.go](../../internal/server/server.go)。
 
-### 4.3 Client 端：不发送心跳
+### 4.3 Client 端：定时心跳 + 读写分离 + 重连
 
-`uploadLoop`（行 126–175）只有一个 `timer`，周期由 `UploadInterval` 驱动，用于**上传数据**，**没有独立的心跳定时器**，全代码库无 `HeartbeatInterval` 配置项。
+`uploadLoop` 拆成**重连循环** + **`runSession`（单次会话）**。会话内读写分离：主 goroutine 写（上传 + 心跳），独立 `readLoop` goroutine 读（收 Ack + 超时检测）：
 
-### 4.4 未实现的心跳能力清单
+- `hbTicker` 按编译期常量 `heartbeatInterval`（30s）周期发 Heartbeat。
+- `readLoop` 在每次 `DecodeFrame` 前设置 `SetReadDeadline(heartbeatTimeout)`；超时或读错则关闭 `connDead` 通道，主循环收到后结束会话、`conn.Close()` 触发 `readLoop` 退出，外层重连循环等待 `RetryInterval` 后重新 `dialWithRetry + performHandshake`。
+- `net.Conn` 支持并发一读一写，主循环是唯一 writer（心跳写与上传写在同一 select 分支互斥），无需写锁。
 
-1. **Client 定时发送 Heartbeat**（缺定时器、缺配置项 `HeartbeatInterval`）。
-2. **Server 接收 Heartbeat 并回复 HeartbeatAck**（缺 `MsgTypeHeartbeat` 分支，缺 `sendHeartbeatResponse`）。
-3. **心跳超时检测**：Server 侧无 `SetReadDeadline`、无 `time.Ticker`、无 `select-timeout`，无法发现"静默断连"的客户端。
-4. **心跳失败重连**：Client 侧无心跳失败 → 重连的触发路径。
+> 并发安全：`connDead` 由 `readLoop` 的 `defer close` 单向关闭；任意退出路径均经 `defer conn.Close()` 让 `readLoop` 收敛，无 goroutine 泄漏。
+
+### 4.4 超时关系
+
+```
+Client heartbeatInterval (30s 常量) ──发心跳──▶ Server
+Client heartbeatTimeout  (90s 常量) ◀─读超时──  Server heartbeatTimeout (90s 常量)
+```
+
+- `heartbeatTimeout > heartbeatInterval` 由编译期常量本身保证（90s > 30s），无需运行期校验。
+- 两端读超时 = interval × 3，留足网络抖动余量。
 
 > 注：[internal/client/upload_loop_example.go](../../internal/client/upload_loop_example.go) 中出现的字符串 `"heartbeat check"` 只是 mock 数据，与心跳机制无关。
 
@@ -228,7 +249,7 @@ for {
 ```go
 for {
     conn, err := ln.Accept()
-    go HandleConnection(conn, cfg.Clients, s, publisher)  // 每连接一个 goroutine
+    go HandleConnection(conn, cfg, s, publisher)  // 每连接一个 goroutine
 }
 ```
 
@@ -271,14 +292,11 @@ for attempt := 0; attempt < cfg.MaxRetry; attempt++ {
 
 配置项（[internal/client/config.go](../../internal/client/config.go)）：`MaxRetry`（默认 10）、`RetryInterval`（默认 5000ms）。
 
-**关键缺口——运行时无重连**：`dialWithRetry` 仅在 `uploadLoop` 开头调用**一次**。一旦进入上传循环：
-- `conn.Write` 失败（`uploadReadings` 返回 error）→ `uploadLoop` 直接 `return`（行 169–172）。
-- **不会重新 `dialWithRetry` + `performHandshake`**。
-- 即：**网络抖动一次，上传就永久停止，整个客户端随之退出。**
+**运行时重连已实现**：`dialWithRetry + performHandshake` 被包进 `runSession`，外层 `uploadLoop` 是重连循环。`runSession` 在 dial 失败、握手失败、心跳读超时（`connDead`）或上传 `Write` 失败时返回 error，外层等待 `RetryInterval` 后重新发起会话。SQLite 中 `UploadNotSent` 的数据在重连后续传；断连瞬间正在传输的那批数据标记为 `UploadFailed`（断点续传语义，属后续增强范畴）。
 
-### 5.4 握手失败同样不重连
+### 5.4 握手失败也会重连
 
-`performHandshake` 返回 error 时，`uploadLoop`（行 140–143）直接 `return`，不重试握手、不重连。
+`performHandshake` 返回 error 时，`runSession` 包装后返回，外层重连循环等待 `RetryInterval` 后重新 `dialWithRetry + performHandshake`。
 
 ---
 
@@ -303,18 +321,16 @@ for attempt := 0; attempt < cfg.MaxRetry; attempt++ {
 4. ✅ 首次连接指数退避重试（上限 60s，响应 ctx 优雅退出）。
 5. ✅ CRC16 帧校验、自定义 epoch 时间戳。
 
-### 7.2 未实现 / 风险点
-1. ⚠️ **心跳业务层完全缺失**：协议就绪但两端不发不收，连接活性检测形同虚设。
-2. ⚠️ **无读超时**：Server 侧无 `SetReadDeadline`，半开连接（客户端崩溃/拔网线）会留下长期阻塞的 goroutine，直至 OS keepalive 超时（分钟级）。
-3. ⚠️ **运行时断连不重连**：上传循环中任一 `Write` 失败即终止，一次抖动导致客户端永久离线，需人工重启。
-4. ⚠️ **无连接状态机 / 全局连接表**：无法感知在线设备、无法触发上下线事件、无法做同 SN 互斥。
-5. ⚠️ **ConnectionManager 未接入**：`LastHeartbeat`/`UpdateHeartbeat` 形同虚设。
-6. ⚠️ **无心跳间隔配置项**：`ClientConfig` 中缺 `HeartbeatInterval`/`HeartbeatTimeout`。
+### 7.2 仍未实现 / 风险点
+1. ⚠️ **无连接状态机 / 全局连接表**：无法感知在线设备、无法触发上下线事件、无法做同 SN 互斥（当前无需求，刻意未引入，见 [[roadmap]]）。
+2. ⚠️ **ConnectionManager 未接入**：`LastHeartbeat`/`UpdateHeartbeat` 形同虚设——超时检测已由 `SetReadDeadline` 覆盖，无需依赖它。
+3. ⚠️ **无 MQTT 上下线通知**：`device/{sn}/status` 未接线。
+4. ⚠️ **断连瞬间在途数据**：标记为 `UploadFailed` 不自动重发（断点续传增强范畴）。
 
-### 7.3 改进方向（仅作梳理，不在本次范围）
-- 心跳落地：Client 加心跳定时器 + 配置项；Server 加 `MsgTypeHeartbeat` 分支回 Ack + `SetReadDeadline` 超时清理。
-- 运行时重连：把 `dialWithRetry + performHandshake` 包成可重入的"建立会话"函数，`uploadLoop` 捕获 Write/握手失败后进入重连循环。
-- 接入 ConnectionManager：鉴权成功 `RegisterConnection`，心跳到达 `UpdateHeartbeat`，断开 `RemoveConnection`。
+### 7.3 已落地（本次）
+- ✅ 心跳落地：Client 加 `hbTicker` + 编译期常量 `heartbeatInterval`/`heartbeatTimeout`；Server 加 `MsgTypeHeartbeat` 分支回 Ack + `SetReadDeadline` 超时清理。
+- ✅ 运行时重连：`dialWithRetry + performHandshake` 包成 `runSession`，`uploadLoop` 重连循环捕获 Write/握手/读超时失败。
+- ⏳ 接入 ConnectionManager：鉴权成功 `RegisterConnection`，心跳到达 `UpdateHeartbeat`，断开 `RemoveConnection`——留待后续。
 
 ---
 

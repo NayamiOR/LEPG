@@ -42,8 +42,8 @@ type ClientConfig struct {
 	MaxRetry        int    `config:"max_retry"         default:"10"               sources:"file,env,default"`
 	RetryInterval   int    `config:"retry_interval"    default:"5000"              sources:"file,env,default"`
 	BufferSize      int    `config:"buffer_size"       default:"1000"              sources:"file,env,default"`
-	UploadBatchSize int    `config:"upload_batch_size" default:"100"               sources:"file,env,default"`
-	UploadInterval  int    `config:"upload_interval"   default:"5000"              sources:"file,env,default"`
+	UploadBatchSize int    `config:"upload_batch_size"  default:"100"              sources:"file,env,default"`
+	UploadInterval  int    `config:"upload_interval"    default:"5000"            sources:"file,env,default"`
 
 	Paths PathsConfig // 子结构体，递归填充
 
@@ -452,7 +452,7 @@ func (t *TopicConfig) Validate() error {
 }
 
 type MqttConfig struct {
-	BrokerAddr string               `toml:"broker_addr" mapstructure:"broker_addr"`
+	BrokerAddr string              `toml:"broker_addr" mapstructure:"broker_addr"`
 	Devices    []*MQTTDeviceConfig `toml:"devices" mapstructure:"devices"`
 }
 
