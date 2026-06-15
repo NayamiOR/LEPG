@@ -250,3 +250,16 @@ The project uses table-driven tests for comprehensive coverage. Key test files:
 - `internal/utils/checksum_test.go`: CRC16 algorithm tests
 
 Always ensure tests pass before committing changes.
+
+## Documentation Maintenance
+
+`docs/` is a Foam knowledge base organized by module area (`design/`, `config/`, `reports/`, `planning/`). Keep it in sync with the code.
+
+**After changing code, update any existing doc that describes the module you touched.** If `docs/` already documents the changed module/feature, update that doc's content to reflect the change — do not create a new doc unless the change introduces a genuinely new module. Only update docs that actually correspond to the changed code; leave unrelated docs alone.
+
+Module → doc mapping for the common cases:
+- `internal/msg/` → `docs/design/message-protocol.md`
+- Config system (`internal/config/`, `internal/client/config.go`, `internal/server/config.go`, `config/*.toml`) → `docs/config/`
+- Handshake / heartbeat / authentication logic → `docs/design/authentication.md`, `docs/reports/handshake-heartbeat-analysis.md`
+
+When unsure which doc covers a change, search `docs/` for the relevant concept. Follow the Foam convention (kebab-case filenames, frontmatter, `[[wikilinks]]`, atomic notes) — see `docs/README.md`.
