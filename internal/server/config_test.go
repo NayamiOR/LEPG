@@ -9,10 +9,16 @@ func validServerConfig() *ServerConfig {
 		Port:          8883,
 		LogLevel:      "info",
 		LogPath:       "logs/",
-		DataPath:      "/var/cache/lepgs/lepgs.db",
 		LogMaxSize:    10,
 		LogMaxBackups: 3,
 		LogMaxAge:     28,
+		Pg: PgConfig{
+			Host:    "127.0.0.1",
+			Port:    5432,
+			User:    "lepgs",
+			DBName:  "lepgs",
+			SSLMode: "disable",
+		},
 	}
 }
 
@@ -70,10 +76,18 @@ func TestServerConfig_Validate_LogLevel(t *testing.T) {
 	}
 }
 
-func TestServerConfig_Validate_DataPath(t *testing.T) {
+func TestServerConfig_Validate_PgHost(t *testing.T) {
 	cfg := validServerConfig()
-	cfg.DataPath = ""
+	cfg.Pg.Host = ""
 	if err := cfg.Validate(); err == nil {
-		t.Error("expected error for empty DataPath")
+		t.Error("expected error for empty PgHost")
+	}
+}
+
+func TestServerConfig_Validate_PgDBName(t *testing.T) {
+	cfg := validServerConfig()
+	cfg.Pg.DBName = ""
+	if err := cfg.Validate(); err == nil {
+		t.Error("expected error for empty PgDBName")
 	}
 }

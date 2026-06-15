@@ -32,6 +32,7 @@ type ServerConfig struct {
 
 	Mqtt  MqttConfig  // 子结构体，PopulateFromProvider 递归填充
 	Redis RedisConfig // 同上
+	Pg    PgConfig    // PostgreSQL 连接配置
 
 	Clients []ClientDef // 无 sources tag，通过 Unmarshal 填充
 }
@@ -47,6 +48,16 @@ type RedisConfig struct {
 	Addr     string `config:"redis_addr"     default:"127.0.0.1:6379" sources:"file,env,default"`
 	Password string `config:"redis_password"                          sources:"file,env"` // 敏感字段，无 default，init 不生成此 key
 	DB       int    `config:"redis_db"       default:"0"              sources:"file,env,default"`
+}
+
+// PgConfig PostgreSQL 连接配置
+type PgConfig struct {
+	Host     string `config:"pg_host"     default:"127.0.0.1" sources:"file,env,default"`
+	Port     int    `config:"pg_port"     default:"5432"      sources:"file,env,default"`
+	User     string `config:"pg_user"     default:"lepgs"     sources:"file,env,default"`
+	Password string `config:"pg_password"                     sources:"file,env"` // 敏感字段，无 default
+	DBName   string `config:"pg_dbname"   default:"lepgs"     sources:"file,env,default"`
+	SSLMode  string `config:"pg_sslmode"  default:"disable"   sources:"file,env,default"`
 }
 
 // ClientDef 客户端定义，通过 Unmarshal 从 [[clients]] 填充
@@ -101,8 +112,11 @@ func (c *ServerConfig) Validate() error {
 		errs = append(errs, errors.NewConfigInvalidError("log_level", "must be debug/info/warn/error"))
 	}
 
-	if c.DataPath == "" {
-		errs = append(errs, errors.NewConfigInvalidError("data_path", "cannot be empty"))
+	if c.Pg.Host == "" {
+		errs = append(errs, errors.NewConfigInvalidError("pg_host", "cannot be empty"))
+	}
+	if c.Pg.DBName == "" {
+		errs = append(errs, errors.NewConfigInvalidError("pg_dbname", "cannot be empty"))
 	}
 
 	return errors.NewConfigValidationErrors(errs)

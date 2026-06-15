@@ -12,7 +12,7 @@ var Migrations = migrate.NewMigrations()
 func init() {
 	Migrations.MustRegister(func(ctx context.Context, db *bun.DB) error {
 		_, err := db.ExecContext(ctx, `CREATE TABLE IF NOT EXISTS readings (
-			id INTEGER PRIMARY KEY AUTOINCREMENT,
+			id BIGSERIAL PRIMARY KEY,
 			sn VARCHAR NOT NULL,
 			upload_time BIGINT NOT NULL,
 			device VARCHAR(16) NOT NULL,

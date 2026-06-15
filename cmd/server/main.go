@@ -74,7 +74,9 @@ var runCmd = &cobra.Command{
 			}
 		}
 
-		store, err := serverstore.NewSQLiteStore(context.Background(), cfg.DataPath)
+		dsn := fmt.Sprintf("postgres://%s:%s@%s:%d/%s?sslmode=%s",
+			cfg.Pg.User, cfg.Pg.Password, cfg.Pg.Host, cfg.Pg.Port, cfg.Pg.DBName, cfg.Pg.SSLMode)
+		store, err := serverstore.NewPostgresStore(context.Background(), dsn)
 		if err != nil {
 			fmt.Printf("Failed to create store: %v\n", err)
 			os.Exit(1)

@@ -23,11 +23,11 @@ aliases: [设备状态记录实现状态分析报告]
 | MQTT 上下线通知（`device/{sn}/status`） | ✅ | ❌ | ❌ | topic 已定义，从未发布 |
 | Notify 协议（0x07 上线/离线/故障事件） | ✅ | ✅ | ❌ | 两端均不发不收 |
 | 边缘设备数值记录（readings） | ✅ | ✅ | ✅ | **已实现并接线**（仅数值，非状态） |
-| 边缘设备注册表（devices 表） | ❌ | ❌ | ❌ | 无，设备只能从 readings 反推 |
+| 边缘设备注册表（devices 表） | ✅ | ✅ | ✅ | **已实现**：`devices` 表 + `SaveReadings` upsert + `QueryDevices` 查询 |
 | 边缘设备在线/离线检测 | ⚠️ | ❌ | ❌ | client 有 `OfflineThreshold`/`EnableMonitor` 字段，但轮询循环不消费 |
 | 设备元数据（型号/连接/点位）上送 | ❌ | ❌ | ❌ | 设备定义只存在于 client 配置，server 无感知 |
 
-**一句话总结**：边缘设备的**数值**这条记录通路是通的（readings 表）；**网关状态**（在线/离线/心跳）已通过 `RedisConnectionManager` 接线落地到 Redis（key `lepg:device:{SN}`）；边缘设备的**状态/存活**通路仍是"零件造好了（`NotifyPayload`、`OfflineThreshold` 字段）却没装上车"——server 侧对边缘设备状态仍无感知。
+**一句话总结**：边缘设备的**数值**这条记录通路是通的（readings 表）；**网关状态**（在线/离线/心跳）已通过 `RedisConnectionManager` 接线落地到 Redis（key `lepg:device:{SN}`）；**设备注册表**（devices 表 + SaveReadings upsert + QueryDevices）已实现，server 可枚举各网关下挂设备；边缘设备的**状态/存活**通路仍是"零件造好了（`NotifyPayload`、`OfflineThreshold` 字段）却没装上车"——离线检测与 Notify 协议尚未接线。
 
 ---
 
@@ -131,12 +131,14 @@ server: parse Upload → SQLiteStore.SaveReadings
 
 注意：记录的是**数值快照**，不是状态。但因为它携带了 `device`(hash) 和 `device_name`，所以**能从 readings 反推出"某网关下出现过哪些设备"**——这是目前 server 感知边缘设备存在的唯一途径。
 
-### 4.2 设备注册表：完全没有 ❌
+### 4.2 设备注册表：已实现 ✅
 
-server 侧没有任何"设备目录"概念：
+server 侧现已具备设备目录能力：
 
-- [internal/server/config.go](../../internal/server/config.go) 的 `ServerConfig.Clients []ClientDef` 只有 `sn/token/description`，**没有子设备清单**。
-- 没有 `devices` 表。一个边缘设备在 server 眼里"存在"，当且仅当它上传过至少一条 reading；要列网关下设备只能 `SELECT DISTINCT device FROM readings WHERE sn=?`，且无从得知设备型号/连接方式/点位定义（这些只活在 client 配置）。
+- `devices` 表（[002_devices.go](../../internal/server/cache/migrations/002_devices.go)）：字段 `sn` / `device_hash` / `device_name` / `type` / `first_seen` / `last_seen` / `status`，UNIQUE(sn, device_hash)。
+- `SaveReadings` 内自动 upsert（[sqlite.go](../../internal/server/cache/sqlite.go)）：每个 upload 批次去重后更新 `last_seen`，首次出现时记录 `first_seen`。
+- `QueryDevices` 接口：按 `sn` 查询网关下所有设备，支持分页。
+- `type` 字段当前为可空——server 无法从 reading 获知连接类型(rtu/tcp/mqtt)，留待后续元数据上送填充。
 
 ### 4.3 在线/离线检测：配置有、逻辑无 ⚠️
 
@@ -194,9 +196,10 @@ server 侧没有任何"设备目录"概念：
    - 心跳接入：`case MsgTypeHeartbeat` 分支 → `UpdateHeartbeat`（刷新 `last_heartbeat`）。
    - 待补：`ListConnections` 的查询出口（HTTP/调试接口），让"在线网关列表"可观测。
 
-2. **边缘设备注册表**
-   - 新增 `devices` 迁移与表（`sn`/`device_hash`/`device_name`/`type`/`first_seen`/`last_seen`/`status`...）。
-   - `SaveReadings` 时 upsert 设备行（first_seen / last_seen / last_value），让"网关—设备"目录可枚举，而非依赖 `DISTINCT` 反推。
+2. **边缘设备注册表** ✅（已完成）
+   - `devices` 迁移与表（`sn`/`device_hash`/`device_name`/`type`/`first_seen`/`last_seen`/`status`，UNIQUE(sn, device_hash)）——见 `internal/server/cache/migrations/002_devices.go`。
+   - `SaveReadings` 时按批次去重 upsert 设备行（first_seen 仅首次写入、last_seen 每次更新），`QueryDevices` 可按 SN 枚举网关下所有设备——见 `internal/server/cache/sqlite.go`。
+   - 测试覆盖：首次注册、重复更新、批内去重、多设备、跨网关隔离、空批次——见 `internal/server/cache/sqlite_test.go`。
 
 3. **边缘设备离线检测 + Notify**
    - client：在 `ModbusDevicePolling` 内用 `OfflineThreshold` 计时，连续读取失败超过阈值 → 标记离线 → 通过 `MsgTypeNotify`(EventCode=0x02) 上送。

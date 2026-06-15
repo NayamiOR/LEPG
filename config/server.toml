@@ -1,7 +1,13 @@
 log_level = 'info'
 log_path = 'logs/'
 port = 8883
-data_path = "./server.db"
+# PostgreSQL configuration
+pg_host = "127.0.0.1"
+pg_port = 5432
+pg_user = "lepgs"
+pg_password = ""
+pg_dbname = "lepgs"
+pg_sslmode = "disable"
 
 # MQTT broker 配置
 mqtt_tcp = "127.0.0.1:1883"
