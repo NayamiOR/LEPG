@@ -27,6 +27,35 @@
 
 ---
 
+## 技术栈
+
+### 核心技术
+
+| 类别 | 技术 | 用途 |
+|------|------|------|
+| **语言** | Go 1.23+ | 核心开发语言 |
+| **协议** | 自定义 TLV | 数据传输格式 |
+| **数据库** | SQLite | 客户端本地缓存（断点续传） |
+| | PostgreSQL | 服务端持久化存储 |
+| **工业协议** | Modbus TCP/RTU | 设备数据采集 |
+| **消息队列** | MQTT | 设备数据接入与转发 |
+| **缓存** | Redis | 连接状态管理 |
+
+### 主要依赖
+
+- **CLI 框架**: [spf13/cobra](https://github.com/spf13/cobra)
+- **配置管理**: [spf13/viper](https://github.com/spf13/viper)
+- **ORM**: [uptrace/bun](https://github.com/uptrace/bun)
+- **Modbus**: [grid-electricity/modbus](https://github.com/grid-electricity/modbus)
+
+### 架构模式
+
+- **Provider Chain**: 分层配置系统（Default < Env < File < Flag）
+- **依赖注入**: 配置注入而非全局单例
+- **Goroutine-per-connection**: 服务端并发处理
+
+---
+
 ## 系统架构
 
 ### 全链路 Workflow
