@@ -3,6 +3,7 @@ package main
 import (
 	"LEPG/internal/config"
 	logging "LEPG/internal/log"
+	"LEPG/internal/output"
 	"LEPG/internal/server"
 	serverstore "LEPG/internal/server/cache"
 	"LEPG/internal/server/cache/connections"
@@ -107,7 +108,29 @@ var runCmd = &cobra.Command{
 		defer rdb.Close()
 		connMgr := connections.NewRedisConnectionManager(rdb)
 
-		if err := server.ReceiveLoop(cfg, store, publisher, connMgr); err != nil {
+		// 创建 OutputRouter（对外 Push 模式）
+		var router *output.OutputRouter
+		if len(cfg.Outputs) > 0 {
+			sinks := make([]output.Sinker, 0, len(cfg.Outputs))
+			for _, outCfg := range cfg.Outputs {
+				if !outCfg.Enabled {
+					continue
+				}
+				sink, err := output.NewSinker(outCfg)
+				if err != nil {
+					slog.Warn("failed to create sinker, skipping", "name", outCfg.Name, "error", err)
+					continue
+				}
+				sinks = append(sinks, sink)
+				slog.Info("output sinker created", "name", outCfg.Name, "type", outCfg.Type)
+			}
+			if len(sinks) > 0 {
+				router = output.NewOutputRouter(sinks)
+				defer router.Shutdown()
+			}
+		}
+
+		if err := server.ReceiveLoop(cfg, store, publisher, connMgr, router); err != nil {
 			fmt.Printf("Server error: %v\n", err)
 			os.Exit(1)
 		}

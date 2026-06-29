@@ -5,7 +5,7 @@ port = 8883
 pg_host = "127.0.0.1"
 pg_port = 5432
 pg_user = "lepgs"
-pg_password = ""
+pg_password = "lepgs123"
 pg_dbname = "lepgs"
 pg_sslmode = "disable"
 
@@ -29,3 +29,27 @@ description = "测试客户端2"
 sn = "CLIENT003"
 token = "token345678"
 description = "生产环境客户端"
+
+# ── 北向数据输出配置 ──
+# 每个 [[outputs]] 块定义一个外部输出目标。
+# type 决定平台 + 传输方式，各平台按需取用认证字段。
+
+# ThingsBoard Gateway MQTT（推模式）
+# LEPG 作为 MQTT 客户端主动向 TB 推送遥测数据
+# [[outputs]]
+# type = "thingsboard-mqtt"
+# name = "tb-mqtt"
+# enabled = true
+# host = "thingsboard.cloud"
+# port = 1883
+# qos = 1
+# token = "YOUR_GATEWAY_ACCESS_TOKEN"
+
+# ThingsBoard Gateway HTTP（推模式）
+# [[outputs]]
+# type = "thingsboard-http"
+# name = "tb-http"
+# enabled = true
+# host = "thingsboard.cloud"
+# port = 443
+# token = "YOUR_GATEWAY_ACCESS_TOKEN"

@@ -3,6 +3,7 @@ package server
 import (
 	"LEPG/internal/model"
 	"LEPG/internal/msg"
+	"LEPG/internal/output"
 	"LEPG/internal/server/cache"
 	"LEPG/internal/server/cache/connections"
 	"LEPG/internal/utils"
@@ -20,7 +21,7 @@ import (
 const heartbeatTimeout = 90 * time.Second
 
 // ReceiveLoop 接收循环
-func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher, connMgr connections.ConnectionManager) error {
+func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher, connMgr connections.ConnectionManager, router *output.OutputRouter) error {
 	ln, err := net.Listen("tcp", fmt.Sprintf(":%d", cfg.Port))
 	if err != nil {
 		return err
@@ -36,11 +37,11 @@ func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher, con
 		}
 
 		slog.Info("accept a connection", "remote_addr", conn.RemoteAddr().String())
-		go HandleConnection(conn, cfg, s, publisher, connMgr)
+		go HandleConnection(conn, cfg, s, publisher, connMgr, router)
 	}
 }
 
-func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher EventPublisher, connMgr connections.ConnectionManager) {
+func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher EventPublisher, connMgr connections.ConnectionManager, router *output.OutputRouter) {
 	defer conn.Close()
 
 	remoteAddr := conn.RemoteAddr().String()
@@ -95,7 +96,7 @@ func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher
 
 		switch message.Type {
 		case msg.MsgTypeUpload:
-			handleUpload(s, publisher, &message, hsPayload.Sn, remoteAddr)
+			handleUpload(s, publisher, router, &message, hsPayload.Sn, remoteAddr)
 		case msg.MsgTypeHeartbeat:
 			handleHeartbeat(conn, connMgr, factory, &message, hsPayload.Sn)
 		default:
@@ -106,7 +107,7 @@ func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher
 }
 
 // handleUpload 解析并持久化上传的传感器读数。
-func handleUpload(s cache.Store, publisher EventPublisher, message *msg.Msg, sn, remoteAddr string) {
+func handleUpload(s cache.Store, publisher EventPublisher, router *output.OutputRouter, message *msg.Msg, sn, remoteAddr string) {
 	uploadParsed, err := msg.ParseMsg(message)
 	if err != nil {
 		slog.Warn("invalid upload payload", "remote_addr", remoteAddr, "sn", sn, "error", err)
@@ -134,12 +135,18 @@ func handleUpload(s cache.Store, publisher EventPublisher, message *msg.Msg, sn,
 				"remote_addr", remoteAddr,
 				"sn", sn,
 				"count", len(readings))
-			// TODO: 后续实现 payload 序列化（JSON/MessagePack），框架阶段仅预留调用点
-			// payload := serializeReadings(readings)
-			// if err := publisher.PublishDeviceReadings(sn, payload); err != nil {
-			//     slog.Error("mqtt publish readings failed", "sn", sn, "error", err)
-			// }
+
+			// 1. 内嵌 Broker（拉模式）— 未启用，先记日志
 			_ = publisher
+
+			// 2. 对外 Push — 按 DeviceName 分组后通过 OutputRouter fan-out
+			if router != nil {
+				grouped := groupReadingsByDeviceName(readings)
+				for deviceName, devReadings := range grouped {
+					deviceKey := fmt.Sprintf("%s-%s", sn, deviceName)
+					router.Send(deviceKey, devReadings)
+				}
+			}
 		}
 	}
 }
@@ -245,4 +252,18 @@ func sendAck(conn net.Conn, factory *msg.MsgFactory, ackType uint8, reqMsgID uin
 	if _, err := conn.Write(encoded); err != nil {
 		slog.Error("failed to send ack", "type", ackType, "error", err)
 	}
+}
+
+// groupReadingsByDeviceName groups readings by their DeviceName field.
+// Readings without a DeviceName are grouped under "__unknown__".
+func groupReadingsByDeviceName(readings []*model.Reading) map[string][]model.Reading {
+	grouped := make(map[string][]model.Reading)
+	for _, r := range readings {
+		key := r.DeviceName
+		if key == "" {
+			key = "__unknown__"
+		}
+		grouped[key] = append(grouped[key], *r)
+	}
+	return grouped
 }

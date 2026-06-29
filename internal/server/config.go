@@ -3,6 +3,7 @@ package server
 import (
 	"LEPG/internal/config"
 	"LEPG/internal/errors"
+	"LEPG/internal/output"
 )
 
 // ServerMetaConfig 元设置：控制 provider 链构建和 initCmd 行为。
@@ -34,7 +35,8 @@ type ServerConfig struct {
 	Redis RedisConfig // 同上
 	Pg    PgConfig    // PostgreSQL 连接配置
 
-	Clients []ClientDef // 无 sources tag，通过 Unmarshal 填充
+	Clients []ClientDef           // 无 sources tag，通过 Unmarshal 填充
+	Outputs []output.OutputConfig // [[outputs]] 数组，通过 Unmarshal 填充
 }
 
 // MqttConfig MQTT broker 监听配置
@@ -90,6 +92,20 @@ func InitServerConfig(provider config.IProvider) (*ServerConfig, error) {
 			return nil, errors.Wrap(err, "failed to unmarshal clients")
 		}
 		cfg.Clients = clientsWrapper.Clients
+
+		var outputsWrapper struct {
+			Outputs []output.OutputConfig `mapstructure:"outputs"`
+		}
+		if err := u.Unmarshal(&outputsWrapper); err != nil {
+			return nil, errors.Wrap(err, "failed to unmarshal outputs")
+		}
+		cfg.Outputs = outputsWrapper.Outputs
+	}
+
+	for _, o := range cfg.Outputs {
+		if err := o.Validate(); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := cfg.Validate(); err != nil {
