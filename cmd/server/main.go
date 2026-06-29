@@ -95,18 +95,21 @@ var runCmd = &cobra.Command{
 		// TODO: 数据桥接阶段替换为 server.NewMqttPublisher(broker)
 		var publisher server.EventPublisher = new(server.NopPublisher)
 
-		// Redis 连接状态管理
+		// Redis 连接状态管理（Redis 不可用时回退到内存模式）
 		rdb := redis.NewClient(&redis.Options{
 			Addr:     cfg.Redis.Addr,
 			Password: cfg.Redis.Password,
 			DB:       cfg.Redis.DB,
 		})
+		var connMgr connections.ConnectionManager
 		if err := rdb.Ping(context.Background()).Err(); err != nil {
-			fmt.Printf("Failed to connect to Redis at %s: %v\n", cfg.Redis.Addr, err)
-			os.Exit(1)
+			slog.Warn("Redis unavailable, falling back to in-memory connection manager", "addr", cfg.Redis.Addr, "error", err)
+			rdb.Close()
+			connMgr = connections.NewMemoryConnectionManager()
+		} else {
+			defer rdb.Close()
+			connMgr = connections.NewRedisConnectionManager(rdb)
 		}
-		defer rdb.Close()
-		connMgr := connections.NewRedisConnectionManager(rdb)
 
 		// 创建 OutputRouter（对外 Push 模式）
 		var router *output.OutputRouter
