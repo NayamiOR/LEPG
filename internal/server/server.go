@@ -136,8 +136,12 @@ func handleUpload(s cache.Store, publisher EventPublisher, router *output.Output
 				"sn", sn,
 				"count", len(readings))
 
-			// 1. 内嵌 Broker（拉模式）— 未启用，先记日志
-			_ = publisher
+			// 1. 内嵌 Broker（拉模式）— 发布到 device/{SN}/reading
+			if payload, err := serializeReadings(readings); err != nil {
+				slog.Warn("failed to serialize readings for mqtt", "sn", sn, "error", err)
+			} else if err := publisher.PublishDeviceReadings(sn, payload); err != nil {
+				slog.Warn("failed to publish readings to mqtt broker", "sn", sn, "error", err)
+			}
 
 			// 2. 对外 Push — 按 DeviceName 分组后通过 OutputRouter fan-out
 			if router != nil {

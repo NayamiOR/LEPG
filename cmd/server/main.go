@@ -92,8 +92,7 @@ var runCmd = &cobra.Command{
 		}
 		defer broker.Stop()
 
-		// TODO: 数据桥接阶段替换为 server.NewMqttPublisher(broker)
-		var publisher server.EventPublisher = new(server.NopPublisher)
+		var publisher server.EventPublisher = server.NewMqttPublisher(broker)
 
 		// Redis 连接状态管理（Redis 不可用时回退到内存模式）
 		rdb := redis.NewClient(&redis.Options{
