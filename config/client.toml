@@ -133,7 +133,7 @@ access = "ro"
 # Python 模拟器 (scripts/mqtt_simulator.py) 连接此 broker 发布数据
 
 [mqtt]
-broker_addr = "127.0.0.1:1883"
+broker_addr = "127.0.0.1:1884"
 
 # 温湿度传感器
 [[mqtt.devices]]

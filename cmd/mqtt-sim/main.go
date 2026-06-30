@@ -4,7 +4,7 @@
 // 用法:
 //
 //	go run ./cmd/mqtt-sim
-//	go run ./cmd/mqtt-sim --broker 192.168.1.100:1883 --interval 3
+//	go run ./cmd/mqtt-sim --broker 192.168.1.100:1884 --interval 3
 //	go run ./cmd/mqtt-sim --devices temp_hum,pressure
 package main
 
@@ -286,14 +286,14 @@ func newComplexJSON(interval time.Duration) *device {
 type deviceFactory func(interval time.Duration) *device
 
 var allDevices = map[string]struct {
-	Factory   deviceFactory
+	Factory    deviceFactory
 	DefaultSec int
 }{
-	"temp_hum":    {newTempHum, 2},
-	"power":       {newPower, 1},
-	"pressure":    {newPressure, 3},
-	"gas":         {newGas, 5},
-	"flow":        {newFlow, 2},
+	"temp_hum":     {newTempHum, 2},
+	"power":        {newPower, 1},
+	"pressure":     {newPressure, 3},
+	"gas":          {newGas, 5},
+	"flow":         {newFlow, 2},
 	"complex_json": {newComplexJSON, 5},
 }
 
@@ -422,7 +422,7 @@ func runDevice(ctx context.Context, d *device, brokerURL string) {
 // --- CLI ---
 
 func parseArgs() (brokerURL string, interval time.Duration, selectedDevices []string) {
-	broker := flag.String("broker", "127.0.0.1:1883", "MQTT Broker 地址 (host:port)")
+	broker := flag.String("broker", "127.0.0.1:1884", "MQTT Broker 地址 (host:port)")
 	intervalSec := flag.Float64("interval", 0, "覆盖所有设备的采集间隔(秒)，0=使用设备默认值")
 	devices := flag.String("devices", "all", "启用的设备，逗号分隔")
 	flag.Parse()
@@ -430,7 +430,7 @@ func parseArgs() (brokerURL string, interval time.Duration, selectedDevices []st
 	// 解析 broker URL
 	host, portStr, hasPort := strings.Cut(*broker, ":")
 	if !hasPort {
-		portStr = "1883"
+		portStr = "1884"
 	}
 	brokerURL = fmt.Sprintf("tcp://%s:%s", host, portStr)
 
