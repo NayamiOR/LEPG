@@ -59,8 +59,8 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 | **数据接收 + PostgreSQL 存储** | ✅ 100% | gob 解码 Upload 消息，存入 PostgreSQL |
 | **PostgreSQL 查询** | ✅ 100% | 按 SN、设备名、时间范围过滤 |
 | **连接管理器** | ✅ 100% | 内存版 + Redis 版均实现（Redis 版未在主流程启用） |
-| **内嵌 MQTT Broker** | ⚠️ ~50% | comqtt v2，TCP + WS 监听正常；无认证（AllowHook），无 ACL |
-| **数据桥接（TLV→MQTT）** | ❌ ~20% | `MqttPublisher` 已实现但未接入，当前使用 `NopPublisher`，**零数据输出** |
+| **内嵌 MQTT Broker** | ⚠️ ~50% | comqtt v2，TCP + WS 监听正常；无认证（AllowHook），无 ACL；客户端本地 Broker 使用 1884 端口避免与本地服务端 1883 冲突 |
+| **北向数据输出** | ✅ 100% | `internal/output/` 包实现 Sinker/Formatter/OutputRouter 三层架构；ThingsBoard Gateway MQTT + HTTP 两种 Push 传输；按 DeviceName 分组 fan-out；`[[outputs]]` TOML 数组驱动，工厂模式创建 Sinker |
 
 ### 未实现功能
 
@@ -75,7 +75,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ## 二、关键问题（按影响排序）
 
-1. **服务端数据桥接断路** — 最核心的功能缺口。服务端接收了数据、存入了 PostgreSQL，但 MQTT Broker 对外发布的流量为零。`MqttPublisher` 已写好，只需接入替换 `NopPublisher` 并实现 Reading→JSON 序列化。
+1. ~~**服务端数据桥接断路**~~ ✅ 已解决 — `internal/output/` 包实现了完整的北向数据 Push 通道：OutputRouter 按 DeviceName 分组后 fan-out 到各 Sinker（ThingsBoard MQTT + HTTP），由 `[[outputs]]` TOML 配置驱动。
 2. **客户端 MQTT 不校验数据** — `handleMqttReading` 接受任何 SN 和点位，不检查是否在 `MqttConfig` 中注册。
 3. **无 MQTT 测试** — 整个 MQTT 数据路径零自动化测试。
 4. **Modbus 解析逻辑待验证** — `modbus.go:74` 有 TODO 注释提示需要检查纠正。
@@ -95,12 +95,13 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 | Publisher 接口 | `publisher.go` | `NopPublisher` / `MqttPublisher` |
 | PostgreSQL 存储 | `cache/postgres.go` | 含 `QueryReadings` 过滤查询 |
 | 连接管理器 | `cache/connections/` | 内存版 + Redis 版 |
+| **北向数据输出** | `internal/output/` | Sinker/Formatter/OutputRouter；ThingsBoard Gateway MQTT + HTTP；`[[outputs]]` TOML 驱动 |
 
 ### 待实现
 
 | 优先级 | 功能 | 说明 | 参考 |
 |--------|------|------|------|
-| P1 | **数据桥接** | Reading→JSON 序列化，`MqttPublisher` 接入替换 `NopPublisher` | [[mqtt-broker-design]] §2 |
+| P1 | **数据桥接（Broker 拉模式）** | `MqttPublisher` 接入 comqtt Broker，替换 `NopPublisher` | [[mqtt-broker-design]] §2 |
 | P2 | **MQTT 认证** | 自定义 AuthHook，MQTT username/password 映射 SN/Token | [[mqtt-broker-design]] §3 |
 | P3 | **ACL 规则 + QoS 分级** | 设备只能访问自己 SN 的 Topic；reading QoS 0、status QoS 1 + Retain | [[mqtt-broker-design]] §4-5 |
 | P3 | **设备上下线通知** | 发布 `device/{SN}/status`（Retain），新订阅者立即获取状态 | |
@@ -115,16 +116,11 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ## 四、开发路线图
 
-### Phase 0：服务端数据通路打通（预计 1-2 天）
+### Phase 0：服务端数据通路打通 ✅ 已完成
 
-**目标**：数据全链路流通 — 设备 → 客户端 → 服务端 → MQTT Broker → 外部消费者
+**成果**：`internal/output/` 包实现 Sinker/Formatter/OutputRouter 三层 Push 架构；支持 ThingsBoard Gateway MQTT + HTTP 两种传输；按 DeviceName 分组 fan-out；由 `[[outputs]]` TOML 数组驱动。
 
-| 任务 | 文件 | 说明 |
-|------|------|------|
-| 接入 `MqttPublisher` 替换 `NopPublisher` | `cmd/server/main.go` | 一行替换 |
-| 实现 Reading→JSON 序列化 | `internal/server/server.go` | 定义 `MqttReading` 结构体，取消 TODO 注释启用 publisher 调用 |
-| Topic 格式统一 | `internal/client/mqtt.go` / `internal/server/mqtt.go` | 确保两端 Topic 命名一致 |
-| 端到端验证 | 手动测试 | 启动服务端 + 客户端（MQTT 模式），外部客户端订阅 `device/+/reading` |
+**修复**：发现客户端-服务端 MQTT Broker 同占 1883 端口冲突，客户端改为 1884。
 
 **验证**：外部 MQTT 客户端能订阅并收到设备数据
 
@@ -257,7 +253,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 ## 五、建议优先级排序
 
 ```
-高   → 数据通路打通（Phase 0）     ← 最大的功能缺口
+高   → 数据通路打通（Phase 0）     ✅ 已完成 — Push 模式（TB Gateway MQTT + HTTP）
 高   → 客户端 MQTT 校验（Phase 1）
 中   → MQTT 认证 ACL（Phase 2）
 中   → 心跳与生命周期（Phase 3）
@@ -279,3 +275,6 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 - [[authentication|网关认证逻辑]]
 - [[message-protocol|消息协议]]
 - [[overview|配置系统总览]]
+- [[数据输出模块最终设计|数据输出模块最终设计]]
+- [[端口分配一览|端口分配一览]]
+- [[ThingsBoard-Gateway-Payload格式|ThingsBoard Gateway Payload 格式]]
