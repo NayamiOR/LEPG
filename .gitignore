@@ -45,3 +45,4 @@ logs/
 
 .env/
 server.toml
+client.toml

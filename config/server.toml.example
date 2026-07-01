@@ -1,11 +1,12 @@
 log_level = 'info'
 log_path = 'logs/'
 port = 8883
+
 # PostgreSQL configuration
 pg_host = "127.0.0.1"
 pg_port = 5432
-pg_user = "lepgs"
-pg_password = "lepgs123"
+pg_user = "your_pg_user"
+pg_password = "your_pg_password"
 pg_dbname = "lepgs"
 pg_sslmode = "disable"
 
@@ -17,18 +18,13 @@ mqtt_ws = "127.0.0.1:8083"
 # 定义允许连接到服务器的客户端
 [[clients]]
 sn = "CLIENT001"
-token = "token123456"
-description = "测试客户端1"
+token = "your_token_here"
+description = "示例客户端1"
 
 [[clients]]
 sn = "CLIENT002"
-token = "token789012"
-description = "测试客户端2"
-
-[[clients]]
-sn = "CLIENT003"
-token = "token345678"
-description = "生产环境客户端"
+token = "your_token_here"
+description = "示例客户端2"
 
 # ── 北向数据输出配置 ──
 # 每个 [[outputs]] 块定义一个外部输出目标。
