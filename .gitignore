@@ -44,3 +44,4 @@ __pycache__/
 logs/
 
 .env/
+server.toml
