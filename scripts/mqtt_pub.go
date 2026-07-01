@@ -11,7 +11,6 @@ package main
 import (
 	"flag"
 	"fmt"
-	"net"
 	"os"
 	"time"
 
@@ -28,9 +27,13 @@ const (
 	message = `{"temperature":35}`
 )
 
-var (
-	tokenAsPassword = flag.Bool("token-as-password", false, "将 token 作为 MQTT password（而非 username）发送")
-)
+// var (
+//
+//	tokenAsPassword = flag.Bool("token-as-password", false, "将 token 作为 MQTT password（而非 username）发送")
+//
+// )
+var f = false
+var tokenAsPassword = &f
 
 func main() {
 	flag.Parse()
@@ -39,40 +42,12 @@ func main() {
 	brokerURL := fmt.Sprintf("tcp://%s:%d", host, port)
 
 	// ============================================================
-	// Step 1: 裸 TCP 连通性预检
-	// ============================================================
-	fmt.Printf("=== TCP 连通性预检 ===\n")
-	fmt.Printf("目标: %s:%d\n", host, port)
-
-	conn, err := net.DialTimeout("tcp", fmt.Sprintf("%s:%d", host, port), 5*time.Second)
-	if err != nil {
-		fmt.Fprintf(os.Stderr, "❌ TCP 连接失败: %v\n", err)
-		fmt.Fprintf(os.Stderr, "\n可能原因:\n")
-		fmt.Fprintf(os.Stderr, "  1. 主机 %s 不可达（防火墙/网络不通）\n", host)
-		fmt.Fprintf(os.Stderr, "  2. 端口 %d 未开放\n", port)
-		fmt.Fprintf(os.Stderr, "  3. DNS 解析失败\n")
-		os.Exit(1)
-	}
-	conn.Close()
-	fmt.Printf("✅ TCP 连接成功（%s:%d 可达）\n\n", host, port)
-
-	// ============================================================
 	// Step 2: MQTT 连接
 	// ============================================================
 	authMode := "username"
 	if *tokenAsPassword {
 		authMode = "password"
 	}
-
-	fmt.Printf("=== MQTT 连接参数 ===\n")
-	fmt.Printf("Broker:     %s\n", brokerURL)
-	fmt.Printf("ClientID:   %s\n", clientID)
-	fmt.Printf("Topic:      %s\n", topic)
-	fmt.Printf("QoS:        %d\n", qos)
-	fmt.Printf("Token 位置: %s\n", authMode)
-	fmt.Printf("Message:    %s\n", message)
-	fmt.Printf("协议版本:   MQTT 3.1.1\n")
-	fmt.Println("---")
 
 	opts := mqtt.NewClientOptions().
 		AddBroker(brokerURL).
@@ -143,4 +118,27 @@ func main() {
 		os.Exit(1)
 	}
 	fmt.Println("✅ 发布成功")
+}
+
+type MqttSink struct {
+	client mqtt.Client
+}
+
+func NewMqttSink(client mqtt.Client) *MqttSink {
+	return &MqttSink{client: client}
+}
+
+func (m *MqttSink) publish() error {
+	pubToken := m.client.Publish(topic, byte(qos), false, message)
+	if !pubToken.WaitTimeout(10 * time.Second) {
+		err := fmt.Errorf("发布超时")
+		fmt.Fprintln(os.Stderr, "❌ 错误: 发布超时")
+		return err
+	}
+	if err := pubToken.Error(); err != nil {
+		err := fmt.Errorf("发布失败: %w", err)
+		fmt.Fprintf(os.Stderr, "❌ 错误: 发布失败: %v\n", err)
+		return err
+	}
+	return nil
 }
