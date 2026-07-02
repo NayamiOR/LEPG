@@ -48,4 +48,5 @@ description = "示例客户端2"
 # enabled = true
 # host = "thingsboard.cloud"
 # port = 443
+# scheme = "https"   # "http" or "https", default "https"
 # token = "YOUR_GATEWAY_ACCESS_TOKEN"

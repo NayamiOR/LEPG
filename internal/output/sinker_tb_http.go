@@ -27,7 +27,11 @@ func NewThingsBoardHttpSinker(cfg OutputConfig) (*tbHttpSinker, error) {
 	}
 
 	timeout := time.Duration(cfg.Timeout) * time.Second
-	url := fmt.Sprintf("https://%s:%d/api/v1/%s/telemetry", cfg.Host, cfg.Port, cfg.Token)
+	scheme := cfg.Scheme
+	if scheme == "" {
+		scheme = "https"
+	}
+	url := fmt.Sprintf("%s://%s:%d/api/v1/%s/telemetry", scheme, cfg.Host, cfg.Port, cfg.Token)
 
 	return &tbHttpSinker{
 		cfg:       cfg,

@@ -129,6 +129,7 @@ type OutputConfig struct {
 	Password     string `mapstructure:"password"`
 
 	// HTTP-specific
+	Scheme  string            `mapstructure:"scheme"` // "http" or "https", default "https"
 	URL     string            `mapstructure:"url"`
 	Headers map[string]string `mapstructure:"headers"`
 	Timeout int               `mapstructure:"timeout"` // seconds, default 10
