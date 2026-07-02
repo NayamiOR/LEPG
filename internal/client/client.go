@@ -105,7 +105,6 @@ func consumeAndWrite(ctx context.Context, ch <-chan model.Reading, store cache.S
 			slog.Error("Failed to save readings", "error", err)
 			return
 		}
-		slog.Info("Saved readings")
 		buffer = buffer[:0]
 	}
 

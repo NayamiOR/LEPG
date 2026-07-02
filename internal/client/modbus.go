@@ -128,16 +128,16 @@ func ModbusDevicePolling(ctx context.Context, channel chan model.Reading, dvc *D
 					continue
 				}
 				// Debug: log raw data
-				slog.Debug("Float32 raw data", "point", point.Name, "results", results, "len", len(results))
+				// slog.Debug("Float32 raw data", "point", point.Name, "results", results, "len", len(results))
 
 				// Apply byte order conversion
 				converted := model.ByteOrderConversion(results[:4], point.ByteOrder)
-				slog.Debug("Float32 converted", "point", point.Name, "converted", converted, "byte_order", point.ByteOrder)
+				// slog.Debug("Float32 converted", "point", point.Name, "converted", converted, "byte_order", point.ByteOrder)
 
 				// Convert bytes to uint32 then to float32 using IEEE 754
 				bits := binary.BigEndian.Uint32(converted)
 				value = float64(math.Float32frombits(bits))
-				slog.Debug("Float32 final value", "point", point.Name, "bits", bits, "value", value)
+				// slog.Debug("Float32 final value", "point", point.Name, "bits", bits, "value", value)
 			}
 
 			// Apply scale and offset for numeric types only
@@ -145,12 +145,7 @@ func ModbusDevicePolling(ctx context.Context, channel chan model.Reading, dvc *D
 				value = float64(value.(float64))*point.Scale + point.Offset
 			}
 
-			// Log based on data type
-			slog.Info("Modbus TCP reading",
-				"point", point.Name,
-				"type", point.DataType,
-				"unit", point.Unit,
-				"value", value)
+			logReading("modbus", dvc.Name, point.Name, point.DataType, value, point.Unit)
 
 			reading := model.Reading{
 				Device:     deviceHash,

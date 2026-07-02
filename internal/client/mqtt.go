@@ -91,7 +91,7 @@ func handleMqttReading(topic string, payload []byte, ch chan<- model.Reading, ro
 		Timestamp:  r.TS,
 	}
 
-	slog.Info("mqtt reading", "device", route.deviceName, "point", route.topicCfg.PointName, "value", reading.Value)
+	logReading("mqtt", route.deviceName, route.topicCfg.PointName, dt, r.Value, route.topicCfg.Unit)
 
 	ch <- reading
 }
