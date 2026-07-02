@@ -385,11 +385,12 @@ make clean
 
 ```
 LEPG/
-├── cmd/
+│   ├── cmd/
 │   ├── client/               # 客户端入口
 │   ├── server/               # 服务端入口
 │   ├── modbus-sim/           # Modbus 模拟器
-│   └── mqtt-sim/             # MQTT 模拟器
+│   ├── mqtt-sim/             # MQTT 模拟器
+│   └── mqtt-sub/             # MQTT Pull 测试订阅工具
 ├── internal/
 │   ├── client/               # 客户端实现
 │   ├── server/               # 服务端实现
@@ -449,21 +450,28 @@ LEPG 使用自定义的 TLV (Type-Length-Value) 协议进行数据传输：
 - 连接管理（内存版 + Redis 版）
 - MQTT Broker（服务端，TCP + WebSocket）
 - 字节序转换（abcd、badc、cdab、dcba）
+- **北向 Push 输出链**（Sinker/Formatter/OutputRouter，TB Gateway MQTT + HTTP）
+- **MQTT Pull 数据桥接**（`device/{SN}/reading`，JSON 批量数组）
+- HTTP Sinker HTTPS 支持
+- 统一格式日志（`internal/client/log.go`）
+- 核心模块单元测试（model/payload/formatter/output/connections/server）
+- 上传失败自动重连 + 续传（断点续传增强）
+- 配置文件 .example 模板化
 
 ### 进行中 / 近期计划
 
 - Modbus 写操作（FC5/6/16）
-- Modbus RTU 支持
+- 设备上下线 MQTT 通知（`device/{SN}/status`）
+- 客户端 MQTT 数据校验
 - MQTT 认证与 ACL
-- HTTP API 与 Webhook
-- 数据桥接完善
-- 规则引擎基础
-- Web 管理界面
+- HTTP 健康检查端点
 
 ### 未来规划
 
+- Modbus RTU 支持
+- Prometheus 指标导出
 - TLS/WSS 加密隧道
-- P2P 打洞优化
-- 高频数据预聚合
-- 远程调试与日志拉取
-- 配置下发与模板管理
+- 基础规则引擎（阈值告警）
+- 通用 MQTT Sinker（对接非 TB 平台）
+- 数据自动清理（TTL）
+- HTTP API 与 Webhook
