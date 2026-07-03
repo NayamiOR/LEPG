@@ -155,6 +155,15 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ---
 
+### Phase 2.5：UploadAck 确认机制 ✅ 已完成（2026-07-03）
+
+**成果**：
+- 服务端：入库后发送 `UploadAck(Ok/Failed)`，SHA256 payload 去重（LRU 200条），解析失败也回 Failed
+- 客户端：msgRouter 路由分发、uploadReadings 滑动窗口等 ack（3s 超时回退 NotSent）、sendHeartbeat 同步等回包、连续 3 轮全超时触发重连
+- 设计文档：`项目/LEPG/UploadAck协议实现设计.md`
+
+---
+
 ### Phase 3：客户端 MQTT 数据校验（预计 1 天）
 
 **目标**：客户端只接受配置中注册的设备和数据点
@@ -256,9 +265,10 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ```
 已完成 ✅
-  ├── Phase 0   Push 数据通路（TB Gateway MQTT + HTTP）
-  ├── Phase 1   MQTT Pull 数据桥接（device/{SN}/reading）
-  └── Phase 2   日志规范化 + 单元测试覆盖 + .example 模板 + HTTPS 支持
+  ├── Phase 0     Push 数据通路（TB Gateway MQTT + HTTP）
+  ├── Phase 1     MQTT Pull 数据桥接（device/{SN}/reading）
+  ├── Phase 2     日志规范化 + 单元测试覆盖 + .example 模板 + HTTPS 支持
+  └── Phase 2.5   UploadAck 确认机制（入库确认 + SHA256 去重 + 超时重试 + 触发重连）
 
 高 →
   ├── Phase 3   客户端 MQTT 数据校验

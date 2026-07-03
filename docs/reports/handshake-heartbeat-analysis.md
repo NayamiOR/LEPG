@@ -51,7 +51,7 @@ aliases: [握手与心跳逻辑分析报告]
 MsgTypeHandshake    = 0x01  // 握手      client -> server
 MsgTypeHandshakeAck = 0x02  // 握手回应  server -> client
 MsgTypeUpload       = 0x03  // 上传数据  client -> server
-MsgTypeUploadAck    = 0x04  // 上传回应  server -> client（注：当前 server 未发）
+MsgTypeUploadAck    = 0x04  // 上传回应  server -> client
 MsgTypeHeartbeat    = 0x05  // 心跳      client -> server
 MsgTypeHeartbeatAck = 0x06  // 心跳回应  server -> client
 MsgTypeNotify       = 0x07  // 通知      server -> client
@@ -326,6 +326,7 @@ for attempt := 0; attempt < cfg.MaxRetry; attempt++ {
 2. ⚠️ **ConnectionManager 未接入**：`LastHeartbeat`/`UpdateHeartbeat` 形同虚设——超时检测已由 `SetReadDeadline` 覆盖，无需依赖它。
 3. ⚠️ **无 MQTT 上下线通知**：`device/{sn}/status` 未接线。
 4. ⚠️ **断连瞬间在途数据**：标记为 `UploadFailed` 不自动重发（断点续传增强范畴）。
+5. ✅ **UploadAck 确认机制**（2026-07-03 已完成）：服务端入库后发 Ack(Ok/Failed) + SHA256 去重 + 客户端超时重试 + 连续超时触发重连。
 
 ### 7.3 已落地（本次）
 - ✅ 心跳落地：Client 加 `hbTicker` + 编译期常量 `heartbeatInterval`/`heartbeatTimeout`；Server 加 `MsgTypeHeartbeat` 分支回 Ack + `SetReadDeadline` 超时清理。

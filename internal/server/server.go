@@ -7,18 +7,81 @@ import (
 	"LEPG/internal/server/cache"
 	"LEPG/internal/server/cache/connections"
 	"LEPG/internal/utils"
+	"container/list"
 	"context"
+	"crypto/sha256"
 	"fmt"
 	"log/slog"
 	"net"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
 )
 
-// heartbeatTimeout is the server-side read deadline for detecting silent
-// clients. Fixed at compile time (not user-configurable).
-const heartbeatTimeout = 90 * time.Second
+const (
+	// heartbeatTimeout is the server-side read deadline for detecting silent clients.
+	heartbeatTimeout = 90 * time.Second
+	// dedupCacheSize is the maximum number of payload hashes kept for deduplication.
+	dedupCacheSize = 200
+)
+
+// dedupCache is a thread-safe LRU cache for upload payload deduplication.
+type dedupCache struct {
+	mu       sync.Mutex
+	capacity int
+	lruList  *list.List
+	items    map[string]*list.Element
+}
+
+func newDedupCache(capacity int) *dedupCache {
+	return &dedupCache{
+		capacity: capacity,
+		lruList:  list.New(),
+		items:    make(map[string]*list.Element),
+	}
+}
+
+func (c *dedupCache) exists(key string) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if elem, ok := c.items[key]; ok {
+		c.lruList.MoveToFront(elem)
+		return true
+	}
+	return false
+}
+
+func (c *dedupCache) add(key string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if elem, ok := c.items[key]; ok {
+		c.lruList.MoveToFront(elem)
+		return
+	}
+	elem := c.lruList.PushFront(key)
+	c.items[key] = elem
+	if c.lruList.Len() > c.capacity {
+		if oldest := c.lruList.Back(); oldest != nil {
+			c.lruList.Remove(oldest)
+			delete(c.items, oldest.Value.(string))
+		}
+	}
+}
+
+func (c *dedupCache) clear() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.lruList.Init()
+	c.items = make(map[string]*list.Element)
+}
+
+func payloadKey(payload []byte) string {
+	h := sha256.Sum256(payload)
+	return string(h[:])
+}
+
+var uploadDedup = newDedupCache(dedupCacheSize)
 
 // ReceiveLoop 接收循环
 func ReceiveLoop(cfg *ServerConfig, s cache.Store, publisher EventPublisher, connMgr connections.ConnectionManager, router *output.OutputRouter) error {
@@ -96,7 +159,7 @@ func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher
 
 		switch message.Type {
 		case msg.MsgTypeUpload:
-			handleUpload(s, publisher, router, &message, hsPayload.Sn, remoteAddr)
+			handleUpload(conn, factory, s, publisher, router, &message, hsPayload.Sn, remoteAddr)
 		case msg.MsgTypeHeartbeat:
 			handleHeartbeat(conn, connMgr, factory, &message, hsPayload.Sn)
 		default:
@@ -107,15 +170,24 @@ func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher
 }
 
 // handleUpload 解析并持久化上传的传感器读数。
-func handleUpload(s cache.Store, publisher EventPublisher, router *output.OutputRouter, message *msg.Msg, sn, remoteAddr string) {
+func handleUpload(conn net.Conn, factory *msg.MsgFactory, s cache.Store, publisher EventPublisher, router *output.OutputRouter, message *msg.Msg, sn, remoteAddr string) {
+	if uploadDedup.exists(payloadKey(message.Payload)) {
+		sendAck(conn, factory, msg.MsgTypeUploadAck, message.MsgID, msg.Ok)
+		slog.Info("duplicate upload, skipped save", "sn", sn, "msg_id", message.MsgID)
+		return
+	}
+	uploadDedup.add(payloadKey(message.Payload))
+
 	uploadParsed, err := msg.ParseMsg(message)
 	if err != nil {
-		slog.Warn("invalid upload payload", "remote_addr", remoteAddr, "sn", sn, "error", err)
+		sendAck(conn, factory, msg.MsgTypeUploadAck, message.MsgID, msg.Failed)
+		slog.Warn("invalid upload payload", "sn", sn, "error", err)
 		return
 	}
 	upload, ok := uploadParsed.(*msg.UploadPayload)
 	if !ok {
-		slog.Warn("invalid upload payload", "remote_addr", remoteAddr, "sn", sn, "payload", uploadParsed)
+		sendAck(conn, factory, msg.MsgTypeUploadAck, message.MsgID, msg.Failed)
+		slog.Warn("invalid upload payload type", "sn", sn)
 		return
 	}
 
@@ -125,14 +197,14 @@ func handleUpload(s cache.Store, publisher EventPublisher, router *output.Output
 	}
 	if len(readings) > 0 {
 		if err := s.SaveReadings(context.Background(), sn, readings); err != nil {
+			sendAck(conn, factory, msg.MsgTypeUploadAck, message.MsgID, msg.Failed)
 			slog.Error("failed to save readings",
-				"remote_addr", remoteAddr,
 				"sn", sn,
 				"count", len(readings),
 				"error", err)
 		} else {
+			sendAck(conn, factory, msg.MsgTypeUploadAck, message.MsgID, msg.Ok)
 			slog.Info("saved readings",
-				"remote_addr", remoteAddr,
 				"sn", sn,
 				"count", len(readings))
 
@@ -240,8 +312,8 @@ func sendHandshakeResponse(conn net.Conn, factory *msg.MsgFactory, reqMsgID uint
 	sendAck(conn, factory, msg.MsgTypeHandshakeAck, reqMsgID, code)
 }
 
-// sendAck encodes and writes an Ack frame of the given type (handshake ack /
-// heartbeat ack). Shared by sendHandshakeResponse and the heartbeat handler.
+// sendAck encodes and writes an Ack frame of the given type. Shared by
+// sendHandshakeResponse, handleUpload, and the heartbeat handler.
 func sendAck(conn net.Conn, factory *msg.MsgFactory, ackType uint8, reqMsgID uint16, code uint8) {
 	resp, err := factory.NewMsg(ackType, &msg.AckPayload{MsgID: reqMsgID, Code: code})
 	if err != nil {

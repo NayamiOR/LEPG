@@ -17,7 +17,43 @@ import (
 const (
 	heartbeatInterval = 30 * time.Second
 	heartbeatTimeout  = 90 * time.Second
+
+	// Upload sliding window
+	uploadWindowSize         = 3
+	uploadAckTimeout         = 3 * time.Second
+	maxConsecutiveAllTimeout = 3
 )
+
+// msgRouter routes server messages by type to registered channels.
+type msgRouter struct {
+	mu     sync.Mutex
+	routes map[uint8]chan<- interface{}
+}
+
+func newMsgRouter() *msgRouter {
+	return &msgRouter{routes: make(map[uint8]chan<- interface{})}
+}
+
+func (r *msgRouter) register(msgType uint8, ch chan<- interface{}) {
+	r.mu.Lock()
+	r.routes[msgType] = ch
+	r.mu.Unlock()
+}
+
+func (r *msgRouter) unregister(msgType uint8) {
+	r.mu.Lock()
+	delete(r.routes, msgType)
+	r.mu.Unlock()
+}
+
+func (r *msgRouter) dispatch(msgType uint8, payload interface{}) {
+	r.mu.Lock()
+	ch, ok := r.routes[msgType]
+	r.mu.Unlock()
+	if ok {
+		ch <- payload
+	}
+}
 
 func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 	slog.Info("Client configuration", "config", cfg)
@@ -168,10 +204,12 @@ func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store) error
 
 	slog.Info("handshake successful")
 
-	// Read goroutine: drains server messages (HeartbeatAck) and enforces the
-	// read deadline. Closing connDead signals the writer loop to reconnect.
+	router := newMsgRouter()
+	uploadAckCh := make(chan interface{}, uploadWindowSize)
+	router.register(msg.MsgTypeUploadAck, uploadAckCh)
+
 	connDead := make(chan struct{})
-	go readLoop(conn, connDead)
+	go readLoop(conn, connDead, router)
 
 	hbTicker := time.NewTicker(heartbeatInterval)
 	defer hbTicker.Stop()
@@ -182,6 +220,8 @@ func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store) error
 
 	const maxPayloadSize = 65535
 
+	var consecutiveAllTimeout int
+
 	for {
 		select {
 		case <-ctx.Done():
@@ -189,7 +229,7 @@ func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store) error
 		case <-connDead:
 			return fmt.Errorf("connection lost (read timeout or closed)")
 		case <-hbTicker.C:
-			if err := sendHeartbeat(conn, factory); err != nil {
+			if err := sendHeartbeat(conn, factory, router); err != nil {
 				return fmt.Errorf("heartbeat: %w", err)
 			}
 		case <-uploadTimer.C:
@@ -204,8 +244,11 @@ func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store) error
 				continue
 			}
 
-			if err := uploadReadings(ctx, conn, store, factory, readings, maxPayloadSize); err != nil {
+			if err := uploadReadings(ctx, conn, store, factory, readings, maxPayloadSize, uploadAckCh, &consecutiveAllTimeout); err != nil {
 				return fmt.Errorf("upload: %w", err)
+			}
+			if consecutiveAllTimeout >= maxConsecutiveAllTimeout {
+				return fmt.Errorf("too many consecutive upload ack timeouts (%d)", consecutiveAllTimeout)
 			}
 		}
 	}
@@ -215,7 +258,7 @@ func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store) error
 // implicitly refreshes the read deadline (set before every DecodeFrame call);
 // as long as the server keeps responding (e.g. HeartbeatAck), no timeout fires.
 // On timeout or any read error it closes dead so the writer loop reconnects.
-func readLoop(conn net.Conn, dead chan<- struct{}) {
+func readLoop(conn net.Conn, dead chan<- struct{}, router *msgRouter) {
 	defer close(dead)
 	readTimeout := heartbeatTimeout
 	for {
@@ -226,11 +269,20 @@ func readLoop(conn net.Conn, dead chan<- struct{}) {
 		if err != nil {
 			return
 		}
-		slog.Debug("received message from server", "type", m.Type, "msg_id", m.MsgID)
+		parsed, err := msg.ParseMsg(&m)
+		if err != nil {
+			slog.Warn("failed to parse server message", "type", m.Type, "error", err)
+			continue
+		}
+		router.dispatch(m.Type, parsed)
 	}
 }
 
-func sendHeartbeat(conn net.Conn, factory *msg.MsgFactory) error {
+func sendHeartbeat(conn net.Conn, factory *msg.MsgFactory, router *msgRouter) error {
+	ch := make(chan interface{}, 1)
+	router.register(msg.MsgTypeHeartbeatAck, ch)
+	defer router.unregister(msg.MsgTypeHeartbeatAck)
+
 	hbMsg, err := factory.NewMsg(msg.MsgTypeHeartbeat, &msg.HeartbeatPayload{})
 	if err != nil {
 		return fmt.Errorf("build: %w", err)
@@ -242,10 +294,16 @@ func sendHeartbeat(conn net.Conn, factory *msg.MsgFactory) error {
 	if _, err := conn.Write(encoded); err != nil {
 		return fmt.Errorf("write: %w", err)
 	}
-	return nil
+
+	select {
+	case <-ch:
+		return nil
+	case <-time.After(5 * time.Second):
+		return fmt.Errorf("heartbeat ack timeout")
+	}
 }
 
-func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, factory *msg.MsgFactory, readings []*cache.CachedReading, maxPayloadSize int) error {
+func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, factory *msg.MsgFactory, readings []*cache.CachedReading, maxPayloadSize int, ackCh chan interface{}, consecutiveAllTimeout *int) error {
 	if len(readings) == 0 {
 		return nil
 	}
@@ -263,19 +321,17 @@ func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, facto
 		return fmt.Errorf("build upload message: %w", err)
 	}
 
-	// Batch exceeds the frame limit.
 	if int(uploadMsg.PayloadLen) > maxPayloadSize {
 		if len(readings) == 1 {
-			// A single reading is too large to ever send — fail and skip it.
 			slog.Warn("Single reading exceeds max payload size, skipping", "id", readings[0].ID)
 			store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadFailed)
 			return nil
 		}
 		mid := len(readings) / 2
-		if err := uploadReadings(ctx, conn, store, factory, readings[:mid], maxPayloadSize); err != nil {
+		if err := uploadReadings(ctx, conn, store, factory, readings[:mid], maxPayloadSize, ackCh, consecutiveAllTimeout); err != nil {
 			return err
 		}
-		return uploadReadings(ctx, conn, store, factory, readings[mid:], maxPayloadSize)
+		return uploadReadings(ctx, conn, store, factory, readings[mid:], maxPayloadSize, ackCh, consecutiveAllTimeout)
 	}
 
 	if err := store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadSending); err != nil {
@@ -293,11 +349,27 @@ func uploadReadings(ctx context.Context, conn net.Conn, store cache.Store, facto
 		return fmt.Errorf("write upload message: %w", err)
 	}
 
-	if err := store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadSent); err != nil {
-		slog.Error("Failed to mark readings as uploaded", "error", err)
+	select {
+	case ack := <-ackCh:
+		ackPayload := ack.(*msg.AckPayload)
+		if ackPayload.Code == msg.Ok {
+			if err := store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadSent); err != nil {
+				slog.Error("Failed to mark readings as uploaded", "error", err)
+			}
+			*consecutiveAllTimeout = 0
+			slog.Info("Uploaded batch", "count", len(batchIDs), "payload_size", uploadMsg.PayloadLen)
+		} else {
+			store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadNotSent)
+			slog.Warn("Upload rejected by server", "code", ackPayload.Code)
+		}
+	case <-time.After(uploadAckTimeout):
+		store.UpdateReadingsStatus(ctx, batchIDs, cache.UploadNotSent)
+		*consecutiveAllTimeout++
+		slog.Warn("Upload ack timeout", "count", len(batchIDs))
+	case <-ctx.Done():
+		return ctx.Err()
 	}
 
-	slog.Info("Uploaded batch", "count", len(batchIDs), "payload_size", uploadMsg.PayloadLen)
 	return nil
 }
 

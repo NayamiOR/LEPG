@@ -457,6 +457,7 @@ LEPG 使用自定义的 TLV (Type-Length-Value) 协议进行数据传输：
 - 核心模块单元测试（model/payload/formatter/output/connections/server）
 - 上传失败自动重连 + 续传（断点续传增强）
 - 配置文件 .example 模板化
+- **UploadAck 确认机制**（服务端入库确认 + SHA256 去重 + 客户端超时重试 + 连续超时触发重连）
 
 ### 进行中 / 近期计划
 

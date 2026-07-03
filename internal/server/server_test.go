@@ -6,8 +6,10 @@ import (
 	"LEPG/internal/output"
 	"LEPG/internal/server/cache"
 	"context"
+	"net"
 	"sync"
 	"testing"
+	"time"
 )
 
 // ── Mock Store ───────────────────────────────────────────────
@@ -117,6 +119,21 @@ func (m *mockSinker) getSendCalls() []sinkCall {
 
 // ── Helpers ──────────────────────────────────────────────────
 
+var testFactory = msg.NewMsgFactory()
+
+// discardConn implements net.Conn, discarding writes — used when tests
+// don't verify ack content and just need a conn that won't panic on Write.
+type discardConn struct{}
+
+func (d *discardConn) Read(b []byte) (n int, err error)   { return 0, nil }
+func (d *discardConn) Write(b []byte) (n int, err error)  { return len(b), nil }
+func (d *discardConn) Close() error                       { return nil }
+func (d *discardConn) LocalAddr() net.Addr                { return &net.TCPAddr{} }
+func (d *discardConn) RemoteAddr() net.Addr               { return &net.TCPAddr{} }
+func (d *discardConn) SetDeadline(t time.Time) error      { return nil }
+func (d *discardConn) SetReadDeadline(t time.Time) error  { return nil }
+func (d *discardConn) SetWriteDeadline(t time.Time) error { return nil }
+
 func makeUploadMsg(readings []model.Reading) *msg.Msg {
 	factory := msg.NewMsgFactory()
 	payload := &msg.UploadPayload{Readings: readings}
@@ -130,6 +147,7 @@ func makeUploadMsg(readings []model.Reading) *msg.Msg {
 //
 //	MsgTypeUpload → ParseMsg → SaveReadings → groupByDeviceName → OutputRouter.Send
 func TestHandleUpload_SavesAndRoutes(t *testing.T) {
+	uploadDedup.clear() // 跨测试全局缓存需要重置
 	store := newMockStore()
 	pub := newMockPublisher()
 	sink := newMockSinker("test-sink")
@@ -161,7 +179,7 @@ func TestHandleUpload_SavesAndRoutes(t *testing.T) {
 	uploadMsg := makeUploadMsg(readings)
 	const testSN = "CLIENT001"
 
-	handleUpload(store, pub, router, uploadMsg, testSN, "127.0.0.1:12345")
+	handleUpload(&discardConn{}, testFactory, store, pub, router, uploadMsg, testSN, "127.0.0.1:12345")
 	router.Shutdown() // 等待 fan-out goroutines 完成
 
 	// 验证 Store 收到数据
@@ -205,7 +223,7 @@ func TestHandleUpload_MultipleDevices(t *testing.T) {
 
 	uploadMsg := makeUploadMsg(readings)
 
-	handleUpload(store, newMockPublisher(), router, uploadMsg, "CLIENT001", "127.0.0.1:12345")
+	handleUpload(&discardConn{}, testFactory, store, newMockPublisher(), router, uploadMsg, "CLIENT001", "127.0.0.1:12345")
 	router.Shutdown() // 等待 fan-out goroutines 完成
 
 	calls := sink.getSendCalls()
@@ -237,7 +255,7 @@ func TestHandleUpload_EmptyReadings(t *testing.T) {
 	uploadMsg := makeUploadMsg([]model.Reading{})
 
 	// 空 readings 不应 panic
-	handleUpload(store, newMockPublisher(), router, uploadMsg, "CLIENT001", "127.0.0.1:12345")
+	handleUpload(&discardConn{}, testFactory, store, newMockPublisher(), router, uploadMsg, "CLIENT001", "127.0.0.1:12345")
 
 	calls := sink.getSendCalls()
 	if len(calls) != 0 {
@@ -258,7 +276,7 @@ func TestHandleUpload_StoreError(t *testing.T) {
 	}
 	uploadMsg := makeUploadMsg(readings)
 
-	handleUpload(store, newMockPublisher(), router, uploadMsg, "CLIENT001", "127.0.0.1:12345")
+	handleUpload(&discardConn{}, testFactory, store, newMockPublisher(), router, uploadMsg, "CLIENT001", "127.0.0.1:12345")
 
 	calls := sink.getSendCalls()
 	if len(calls) != 0 {
@@ -280,7 +298,7 @@ func TestHandleUpload_InvalidPayload(t *testing.T) {
 	}
 
 	// 不应 panic
-	handleUpload(store, newMockPublisher(), router, badMsg, "CLIENT001", "127.0.0.1:12345")
+	handleUpload(&discardConn{}, testFactory, store, newMockPublisher(), router, badMsg, "CLIENT001", "127.0.0.1:12345")
 
 	calls := sink.getSendCalls()
 	if len(calls) != 0 {
@@ -291,6 +309,7 @@ func TestHandleUpload_InvalidPayload(t *testing.T) {
 // TestHandleUpload_NilRouter verifies that a nil router does not panic
 // (defensive check for when output module is disabled).
 func TestHandleUpload_NilRouter(t *testing.T) {
+	uploadDedup.clear()
 	store := newMockStore()
 	readings := []model.Reading{
 		{DeviceName: "sensor-01", PointName: "temp", DataType: model.DataTypeFloat32, Value: "25", Timestamp: 1000},
@@ -298,7 +317,7 @@ func TestHandleUpload_NilRouter(t *testing.T) {
 	uploadMsg := makeUploadMsg(readings)
 
 	// router = nil 不应 panic
-	handleUpload(store, newMockPublisher(), nil, uploadMsg, "CLIENT001", "127.0.0.1:12345")
+	handleUpload(&discardConn{}, testFactory, store, newMockPublisher(), nil, uploadMsg, "CLIENT001", "127.0.0.1:12345")
 
 	store.mu.Lock()
 	saved := store.savedReadings["CLIENT001"]
