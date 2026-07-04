@@ -8,7 +8,7 @@ date: 2026-07-03
 
 # LEPG 项目现状报告 & 开发路线图
 
-> 最后更新：2026-07-03。基于截至 `78971b1` 的代码审查。
+> 最后更新：2026-07-04。基于截至 `78971b1` 的代码审查 + Modbus 写操作实现。
 
 ## 项目概况
 
@@ -50,10 +50,10 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 | **上传重连优化** | ✅ 100% | `LoadPendingReadings` 覆盖 `NotSent + Failed` 两种状态，`uploadLoop` `runSession` 返回错误后外层 reconnect loop 重建 session 继续取 pending（原 Phase 8 目标） |
 | **主流程管线** | ✅ 100% | conc.WaitGroup 多协程：MQTT Broker → channel → SQLite → 上传循环 |
 | **统一格式日志** | ✅ 100% | `internal/client/log.go` — `logReading()` 统一列宽格式化输出 |
-| **Modbus TCP 轮询** | ⚠️ ~80% | FC1-4 实现，支持所有数据类型和缩放；RTU 未实现、写操作未实现 |
+|| **Modbus TCP 轮询** | ✅ ~95% | FC1-4 实现，支持所有数据类型和缩放；写操作已通过 ModbusRuntime 补全；RTU 未实现 |
 | **MQTT Broker（本地）** | ⚠️ ~70% | 可接收数据并转 Reading，但不校验配置中注册的设备/点位；端口 1884（避免与本地服务端 1883 端口冲突） |
 | **Modbus RTU** | ❌ 0% | 配置结构已定义，无轮询代码 |
-| **Modbus 写操作** | ❌ 0% | FC5/6/16 配置已支持，无实现 |
+|| **Modbus 写操作** | ✅ 100% | FC5/6/16 通过 ModbusRuntime 实现：共用连接+双 goroutine、状态机连接管理、同步 Write 接口含值反算（scale/offset/byte order）、FC/DataType 兼容校验；含单元测试和 modbus-sim 集成验证 |
 
 ### 服务端（lepgs）
 
@@ -84,7 +84,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 1. ~~**服务端数据桥接断路**~~ ✅ 已解决 — `MqttPublisher` + `serializeReadings` 正式接入，`device/{SN}/reading` 数据流通。
 2. **客户端 MQTT 不校验数据** — `handleMqttReading` 接受任何 SN 和点位，不检查是否在 `MqttConfig` 中注册。
-3. **Modbus 写操作空实现** — FC5/6/16 下行控制链路完全断。
+3. ~~**Modbus 写操作空实现**~~ ✅ 已解决 — `ModbusRuntime` 实现 FC5/6/16，含状态机、值反算、FC/DataType 兼容校验、单元测试。
 4. **设备上下线通知缺失** — 外部系统无法感知设备在线状态。
 
 ---
@@ -112,7 +112,6 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 | P1 | **MQTT 认证** | 自定义 AuthHook，MQTT username/password 映射 SN/Token | [[mqtt-broker-design]] §3 |
 | P1 | **设备上下线通知** | 发布 `device/{SN}/status`（Retain），新订阅者立即获取状态 | |
 | P2 | **ACL 规则 + QoS 分级** | 设备只能访问自己 SN 的 Topic；reading QoS 0、status QoS 1 + Retain | [[mqtt-broker-design]] §4-5 |
-| P2 | **Modbus 写操作（FC5/6/16）** | 下行控制链路 | roadmap Phase 6 |
 | P3 | **性能测试** | 100+ 连接、1000 msg/s 吞吐、24h 稳定性 | [[mqtt-broker-design]] §6 |
 | P4 | **MQTT 消息持久化** | Bolt Hook，Broker 重启后恢复 session/retained message | [[mqtt-broker-design]] §7 |
 | P4 | **WebSocket TLS** | WSS 支持 | |
@@ -164,6 +163,17 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ---
 
+### Phase 2.6：Modbus 写操作（FC5/6/16）✅ 已完成（2026-07-04）
+
+**成果**：
+- `internal/client/modbus_runtime.go` — ModbusRuntime 包装层：共用连接+双 goroutine（poll+write）、状态机连接管理（online/degraded）、同步 Write 接口（内部 scale/offset/byte order 反算）
+- `internal/client/modbus_runtime_test.go` — 18 个单元测试：parsePointValue（9）、Write 拒绝条件（7）、Registry、错误构造
+- `internal/client/client.go` — ModbusRuntime registry：`GetModbusRuntime()` 供外部按设备名获取运行时
+- `internal/client/modbus.go` — 抽取 `parsePointValue`，`ModbusDevicePolling` 改为 Runtime 快捷包装
+- 设计文档：`项目/LEPG/Modbus写操作设计.md`
+
+---
+
 ### Phase 3：客户端 MQTT 数据校验（预计 1 天）
 
 **目标**：客户端只接受配置中注册的设备和数据点
@@ -208,16 +218,15 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ---
 
-### Phase 6：Modbus RTU + 写操作（预计 2-3 天）
+### Phase 6：Modbus RTU（预计 1-2 天）
 
-**目标**：补全 Modbus 功能
+**目标**：补全 Modbus RTU 设备接入
+
+~~FC5/FC6/FC16 写操作~~ ✅ 已在 Phase 6 提前完成：`ModbusRuntime` 实现共用连接+双 goroutine、状态机连接管理、同步 Write 接口含值反算（scale/offset/byte order）、FC/DataType 兼容校验、单元测试（18 tests）+ modbus-sim 集成验证。详见 [[Modbus写操作设计]]。
 
 | 任务 | 文件 |
 |------|------|
 | RTU 轮询 | `internal/client/modbus.go` |
-| TCP/RTU 分派 | `internal/client/client.go` |
-| FC5/FC6/FC16 写操作 | `internal/client/modbus.go` |
-| 验证 TCP 解析逻辑（modbus.go:113 TODO） | `internal/client/modbus.go` |
 | 离线检测（`enable_monitor` + `offline_threshold`） | `internal/client/modbus.go` |
 
 **验证**：RTU 设备正常采集；写寄存器操作成功
@@ -272,12 +281,12 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 高 →
   ├── Phase 3   客户端 MQTT 数据校验
-  ├── Phase 5   设备上下线通知（P0 阻塞项 #2）
-  ├── Phase 6   Modbus 写操作（P0 阻塞项 #3）
+  ├── Phase 5   设备上下线通知（P0 阻塞项）
   └── Phase 7   健康检查端点
 
 中 →
   ├── Phase 4   MQTT 认证 ACL
+  ├── Phase 6   Modbus RTU（写操作已完成）
   ├── Notify 协议处理
   ├── TTL 数据清理
   └── TB 属性上报
