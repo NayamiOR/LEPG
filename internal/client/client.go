@@ -30,6 +30,35 @@ type msgRouter struct {
 	routes map[uint8]chan<- interface{}
 }
 
+// --- Modbus runtime registry (package-level, for external Write access) ---
+
+var (
+	modbusRuntimes   = make(map[string]*ModbusRuntime)
+	modbusRuntimesMu sync.RWMutex
+)
+
+// registerModbusRuntime adds a runtime to the registry.
+func registerModbusRuntime(name string, rt *ModbusRuntime) {
+	modbusRuntimesMu.Lock()
+	modbusRuntimes[name] = rt
+	modbusRuntimesMu.Unlock()
+}
+
+// unregisterModbusRuntime removes a runtime from the registry.
+func unregisterModbusRuntime(name string) {
+	modbusRuntimesMu.Lock()
+	delete(modbusRuntimes, name)
+	modbusRuntimesMu.Unlock()
+}
+
+// GetModbusRuntime returns the runtime for a device by name.
+func GetModbusRuntime(name string) (*ModbusRuntime, bool) {
+	modbusRuntimesMu.RLock()
+	rt, ok := modbusRuntimes[name]
+	modbusRuntimesMu.RUnlock()
+	return rt, ok
+}
+
 func newMsgRouter() *msgRouter {
 	return &msgRouter{routes: make(map[uint8]chan<- interface{})}
 }

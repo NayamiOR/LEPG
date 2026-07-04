@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"math"
-	"time"
 
 	"LEPG/internal/model"
 
@@ -44,122 +43,50 @@ func createHandler(dvc *DeviceConfig) (connectableHandler, error) {
 	}
 }
 
-func ModbusDevicePolling(ctx context.Context, channel chan model.Reading, dvc *DeviceConfig) error {
-	slog.Info("Modbus polling started", "device", dvc.Name, "type", dvc.Type)
-
-	handler, err := createHandler(dvc)
-	if err != nil {
-		return err
-	}
-
-	deviceHash, err := dvc.Hash()
-	if err != nil {
-		return err
-	}
-
-	// Create Modbus client
-	client := modbus.NewClient(handler)
-
-	// Connect
-	err = handler.Connect()
-	if err != nil {
-		return err
-	}
-	defer handler.Close()
-
-	slog.Info("Modbus connected",
-		"type", dvc.Type,
-		"slave_id", dvc.SlaveID)
-
-	pollInterval := dvc.PollInterval
-
-	ticker := time.NewTicker(pollInterval)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			slog.Info("Modbus TCP polling stopped", "device", dvc.Name)
+// parsePointValue converts raw Modbus response bytes into a typed value (bool or float64).
+// Returns nil if the data can't be parsed (e.g. insufficient bytes).
+func parsePointValue(point *ModbusPointConfig, results []byte) any {
+	switch point.DataType {
+	case model.DataTypeBool:
+		return results[0] != 0
+	case model.DataTypeInt16:
+		v := float64(int16(results[0])<<8 | int16(results[1]))
+		return v*point.Scale + point.Offset
+	case model.DataTypeUint16:
+		v := float64(uint16(results[0])<<8 | uint16(results[1]))
+		return v*point.Scale + point.Offset
+	case model.DataTypeInt32:
+		v := float64(int32(results[0])<<24 | int32(results[1])<<16 | int32(results[2])<<8 | int32(results[3]))
+		return v*point.Scale + point.Offset
+	case model.DataTypeUint32:
+		v := float64(uint32(results[0])<<24 | uint32(results[1])<<16 | uint32(results[2])<<8 | uint32(results[3]))
+		return v*point.Scale + point.Offset
+	case model.DataTypeFloat32:
+		if len(results) < 4 {
 			return nil
-		case <-ticker.C:
 		}
-
-		for _, point := range dvc.Points {
-			// slog.Info("Polling point", "point", point.Name, "function_code", point.FunctionCode)
-			var results []byte
-			var err error
-			switch point.FunctionCode {
-			case 1: // Read Coils
-				results, err = client.ReadCoils(point.Address, point.Quantity)
-			case 2: // Read Discrete Inputs
-				results, err = client.ReadDiscreteInputs(point.Address, point.Quantity)
-			case 3: // Read Holding Registers
-				results, err = client.ReadHoldingRegisters(point.Address, point.Quantity)
-			case 4: // Read Input Registers
-				results, err = client.ReadInputRegisters(point.Address, point.Quantity)
-			default:
-				slog.Error("Unsupported function code", "point", point.Name, "function_code", point.FunctionCode)
-				continue
-			}
-			if err != nil {
-				slog.Error("Failed to read holding registers", "error", err)
-				continue
-			}
-
-			var value any
-			originalResults := make([]byte, len(results))
-			copy(originalResults, results) // 保存原始结果以供调试
-
-			// TODO: 检查纠正解析逻辑
-			switch point.DataType {
-			case model.DataTypeBool:
-				value = results[0] != 0
-			case model.DataTypeInt16:
-				value = float64(int16(results[0])<<8 | int16(results[1]))
-			case model.DataTypeUint16:
-				value = float64(uint16(results[0])<<8 | uint16(results[1]))
-			case model.DataTypeInt32:
-				value = float64(int32(results[0])<<24 | int32(results[1])<<16 | int32(results[2])<<8 | int32(results[3]))
-			case model.DataTypeUint32:
-				value = float64(uint32(results[0])<<24 | uint32(results[1])<<16 | uint32(results[2])<<8 | uint32(results[3]))
-			case model.DataTypeFloat32:
-				// Convert 4 bytes to IEEE 754 float32
-				if len(results) < 4 {
-					slog.Error("Insufficient data for float32", "point", point.Name, "length", len(results))
-					continue
-				}
-				// Debug: log raw data
-				// slog.Debug("Float32 raw data", "point", point.Name, "results", results, "len", len(results))
-
-				// Apply byte order conversion
-				converted := model.ByteOrderConversion(results[:4], point.ByteOrder)
-				// slog.Debug("Float32 converted", "point", point.Name, "converted", converted, "byte_order", point.ByteOrder)
-
-				// Convert bytes to uint32 then to float32 using IEEE 754
-				bits := binary.BigEndian.Uint32(converted)
-				value = float64(math.Float32frombits(bits))
-				// slog.Debug("Float32 final value", "point", point.Name, "bits", bits, "value", value)
-			}
-
-			// Apply scale and offset for numeric types only
-			if point.DataType != model.DataTypeBool {
-				value = float64(value.(float64))*point.Scale + point.Offset
-			}
-
-			logReading("modbus", dvc.Name, point.Name, point.DataType, value, point.Unit)
-
-			reading := model.Reading{
-				Device:     deviceHash,
-				DeviceName: dvc.Name,
-				Point:      model.HashPoint(dvc.Name, point.Name),
-				PointName:  point.Name,
-				DataType:   point.DataType,
-				Value:      model.SerializeValue(point.DataType, value),
-				Quality:    model.QualityGood,
-				Unit:       point.Unit,
-				Timestamp:  time.Now().UnixMilli(),
-			}
-
-			channel <- reading
-		}
+		converted := model.ByteOrderConversion(results[:4], point.ByteOrder)
+		bits := binary.BigEndian.Uint32(converted)
+		v := float64(math.Float32frombits(bits))
+		return v*point.Scale + point.Offset
+	default:
+		return nil
 	}
+}
+
+func ModbusDevicePolling(ctx context.Context, channel chan model.Reading, dvc *DeviceConfig) error {
+	rt, err := NewModbusRuntime(dvc)
+	if err != nil {
+		return err
+	}
+	registerModbusRuntime(dvc.Name, rt)
+	defer unregisterModbusRuntime(dvc.Name)
+
+	if err := rt.Start(ctx, channel); err != nil {
+		return err
+	}
+	<-ctx.Done()
+	rt.Stop()
+	slog.Info("Modbus polling stopped", "device", dvc.Name)
+	return nil
 }
