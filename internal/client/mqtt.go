@@ -1,6 +1,7 @@
 package client
 
 import (
+	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/json"
@@ -11,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"LEPG/internal/msg"
 	"LEPG/internal/model"
 
 	mqtt "github.com/wind-c/comqtt/v2/mqtt"
@@ -43,8 +45,45 @@ func parseSource(source string) (sourceFormat, error) {
 	}
 }
 
+type statusHook struct {
+	mqtt.HookBase
+	clientIDIndex map[string]string
+	deviceHashes  map[string]string
+	notifyCh      chan<- msg.NotifyPayload
+}
+
+func (h *statusHook) Provides(b byte) bool {
+	return bytes.Contains([]byte{mqtt.OnConnect, mqtt.OnDisconnect}, []byte{b})
+}
+
+func (h *statusHook) OnConnect(cl *mqtt.Client, pk packets.Packet) error {
+	return nil
+}
+
+func (h *statusHook) OnDisconnect(cl *mqtt.Client, err error, expire bool) {
+	if !expire {
+		return
+	}
+	deviceName, ok := h.clientIDIndex[cl.ID]
+	if !ok {
+		return
+	}
+	deviceHash := h.deviceHashes[deviceName]
+	payload := msg.NotifyPayload{
+		EventCode:  0x02,
+		DeviceHash: deviceHash,
+		Timestamp:  uint32(time.Now().Unix()),
+		Severity:   0,
+		Message:    "device offline",
+	}
+	select {
+	case h.notifyCh <- payload:
+	default:
+	}
+}
+
 // StartMqttBroker starts a local MQTT broker and routes incoming readings to ch.
-func StartMqttBroker(ctx context.Context, ch chan<- model.Reading, mqttCfg *MqttConfig) error {
+func StartMqttBroker(ctx context.Context, ch chan<- model.Reading, notifyCh chan<- msg.NotifyPayload, mqttCfg *MqttConfig) error {
 	opts := &mqtt.Options{InlineClient: true}
 	server := mqtt.New(opts)
 	server.AddHook(new(auth.AllowHook), nil)
@@ -54,11 +93,22 @@ func StartMqttBroker(ctx context.Context, ch chan<- model.Reading, mqttCfg *Mqtt
 		return fmt.Errorf("add mqtt tcp listener: %w", err)
 	}
 
-	// Pre-compute device hashes.
+	// Pre-compute device hashes and client ID index.
 	deviceHashes := make(map[string]string, len(mqttCfg.Devices))
+	clientIDIndex := make(map[string]string, len(mqttCfg.Devices))
 	for _, dev := range mqttCfg.Devices {
 		deviceHashes[dev.Name] = virtualDeviceHash(dev.Name)
+		if dev.ClientID != "" {
+			clientIDIndex[dev.ClientID] = dev.Name
+		}
 	}
+
+	// Register status hook for online/offline notifications.
+	server.AddHook(&statusHook{
+		clientIDIndex: clientIDIndex,
+		deviceHashes:  deviceHashes,
+		notifyCh:      notifyCh,
+	}, nil)
 
 	routes := make(map[string]topicRoute)
 	for _, dev := range mqttCfg.Devices {

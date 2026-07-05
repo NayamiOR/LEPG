@@ -101,6 +101,7 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 	defer store.Close()
 
 	ch := make(chan model.Reading, cfg.BufferSize)
+	notifyCh := make(chan msg.NotifyPayload, 32)
 	var mainWg sync.WaitGroup
 	var producerWg sync.WaitGroup
 
@@ -110,7 +111,7 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 		mainWg.Go(func() {
 			defer producerWg.Done()
 			slog.Info("Starting MQTT broker")
-			if err := StartMqttBroker(ctx, ch, cfg.Mqtt); err != nil {
+			if err := StartMqttBroker(ctx, ch, notifyCh, cfg.Mqtt); err != nil {
 				slog.Error("MQTT broker failed", "error", err)
 			}
 		})
@@ -150,7 +151,7 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 
 	// Goroutine: SQLite → upload
 	mainWg.Go(func() {
-		uploadLoop(ctx, cfg, store)
+		sessionLoop(ctx, cfg, store, notifyCh)
 	})
 
 	mainWg.Wait()
@@ -193,12 +194,12 @@ func consumeAndWrite(ctx context.Context, ch <-chan model.Reading, store cache.S
 	}
 }
 
-func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
+func sessionLoop(ctx context.Context, cfg *ClientConfig, store cache.Store, notifyCh <-chan msg.NotifyPayload) {
 	slog.Info("Upload loop started")
 	retryInterval := time.Duration(cfg.RetryInterval) * time.Millisecond
 
 	for { // reconnect loop
-		err := runSession(ctx, cfg, store)
+		err := runSession(ctx, cfg, store, notifyCh)
 		if ctx.Err() != nil {
 			slog.Info("Upload loop stopped")
 			return
@@ -216,7 +217,7 @@ func uploadLoop(ctx context.Context, cfg *ClientConfig, store cache.Store) {
 // read/write loop. It returns an error (non-nil unless ctx is canceled) so the
 // caller can reconnect. Writes (upload + heartbeat) happen in this goroutine;
 // reads (server messages + timeout detection) happen in a dedicated readLoop.
-func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store) error {
+func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store, notifyCh <-chan msg.NotifyPayload) error {
 	conn, err := dialWithRetry(ctx, cfg)
 	if err != nil {
 		return fmt.Errorf("connect: %w", err)
@@ -257,6 +258,10 @@ func runSession(ctx context.Context, cfg *ClientConfig, store cache.Store) error
 			return nil
 		case <-connDead:
 			return fmt.Errorf("connection lost (read timeout or closed)")
+		case n := <-notifyCh:
+			if err := sendNotify(conn, factory, &n); err != nil {
+				return fmt.Errorf("notify: %w", err)
+			}
 		case <-hbTicker.C:
 			if err := sendHeartbeat(conn, factory, router); err != nil {
 				return fmt.Errorf("heartbeat: %w", err)
@@ -481,4 +486,17 @@ func performHandshake(conn net.Conn, cfg *ClientConfig, factory *msg.MsgFactory)
 	}
 
 	return nil
+}
+
+func sendNotify(conn net.Conn, factory *msg.MsgFactory, payload *msg.NotifyPayload) error {
+	m, err := factory.NewMsg(msg.MsgTypeNotify, payload)
+	if err != nil {
+		return err
+	}
+	encoded, err := m.Encode()
+	if err != nil {
+		return err
+	}
+	_, err = conn.Write(encoded)
+	return err
 }
