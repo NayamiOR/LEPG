@@ -9,21 +9,6 @@ const (
 	AccessWriteOnly AccessType = "wo" // Write-only
 )
 
-// DataType defines the Modbus data type
-type DataType string
-
-const (
-	DataTypeBool    DataType = "bool"    // Boolean (coil/discrete input)
-	DataTypeInt16   DataType = "int16"   // 16-bit signed integer
-	DataTypeUint16  DataType = "uint16"  // 16-bit unsigned integer
-	DataTypeInt32   DataType = "int32"   // 32-bit signed integer (2 registers)
-	DataTypeUint32  DataType = "uint32"  // 32-bit unsigned integer (2 registers)
-	DataTypeFloat32 DataType = "float32" // 32-bit float (2 registers, IEEE 754)
-	DataTypeFloat64 DataType = "float64" // 64-bit float (4 registers, IEEE 754)
-	DataTypeString  DataType = "string"  // String data
-	DataTypeJSON    DataType = "json"
-)
-
 // ByteOrder defines the byte order for multi-register data types
 type ByteOrder string
 

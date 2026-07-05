@@ -6,6 +6,21 @@ import (
 	"strconv"
 )
 
+// DataType defines data types for readings and Modbus points.
+type DataType string
+
+const (
+	DataTypeBool    DataType = "bool"
+	DataTypeInt16   DataType = "int16"
+	DataTypeUint16  DataType = "uint16"
+	DataTypeInt32   DataType = "int32"
+	DataTypeUint32  DataType = "uint32"
+	DataTypeFloat32 DataType = "float32"
+	DataTypeFloat64 DataType = "float64"
+	DataTypeString  DataType = "string"
+	DataTypeJSON    DataType = "json"
+)
+
 type Quality uint8
 
 const (
