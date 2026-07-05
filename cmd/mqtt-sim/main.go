@@ -48,10 +48,8 @@ type device struct {
 }
 
 type readingPayload struct {
-	Type    string `json:"type"`
-	Value   any    `json:"value"`
-	Quality int    `json:"quality"`
-	TS      int64  `json:"ts"`
+	Value any   `json:"value"`
+	TS    int64 `json:"ts"`
 }
 
 type statusPayload struct {
@@ -321,10 +319,8 @@ func connectWithRetry(ctx context.Context, client mqtt.Client, sn string) bool {
 func publishReadings(client mqtt.Client, d *device, tick int) bool {
 	for _, p := range d.Points {
 		payload := readingPayload{
-			Type:    p.DataType,
-			Value:   d.Read(p.Name, tick),
-			Quality: 0,
-			TS:      time.Now().UnixMilli(),
+			Value: d.Read(p.Name, tick),
+			TS:    time.Now().UnixMilli(),
 		}
 		data, err := json.Marshal(payload)
 		if err != nil {

@@ -214,11 +214,13 @@ type ModbusPointConfig struct {
 }
 
 type TopicConfig struct {
-	Topic     string `toml:"topic" mapstructure:"topic"`
-	QoS       byte   `toml:"qos" mapstructure:"qos"`
-	PointName string `toml:"point_name" mapstructure:"point_name"`
-	Unit      string `toml:"unit" mapstructure:"unit"`
-	Retain    bool   `toml:"retain" mapstructure:"retain"`
+	Topic     string         `toml:"topic" mapstructure:"topic"`
+	QoS       byte           `toml:"qos" mapstructure:"qos"`
+	PointName string         `toml:"point_name" mapstructure:"point_name"`
+	DataType  model.DataType `toml:"data_type" mapstructure:"data_type"`
+	Source    string         `toml:"source" mapstructure:"source"`
+	Unit      string         `toml:"unit" mapstructure:"unit"`
+	Retain    bool           `toml:"retain" mapstructure:"retain"`
 }
 
 // DeviceConfig defines a Modbus device configuration
@@ -448,7 +450,50 @@ func (t *TopicConfig) Validate() error {
 	if t.QoS > 2 {
 		return &ValidationError{Field: "qos", Message: "must be 0, 1, or 2"}
 	}
+	if err := validateSource(t.Source); err != nil {
+		return &ValidationError{Field: "source", Message: err.Error()}
+	}
+	if err := validateDataType(t.DataType); err != nil {
+		return &ValidationError{Field: "data_type", Message: err.Error()}
+	}
 	return nil
+}
+
+func validateSource(source string) error {
+	if source == "" {
+		return fmt.Errorf("cannot be empty; must be json:<path>, plain:, or kv:<key>")
+	}
+	switch {
+	case strings.HasPrefix(source, "json:"):
+		if source == "json:" {
+			return fmt.Errorf("json: path cannot be empty")
+		}
+	case source == "plain:":
+		// valid
+	case strings.HasPrefix(source, "kv:"):
+		if source == "kv:" {
+			return fmt.Errorf("kv: key cannot be empty")
+		}
+	default:
+		return fmt.Errorf("invalid format; must be json:<path>, plain:, or kv:<key>")
+	}
+	return nil
+}
+
+func validateDataType(dt model.DataType) error {
+	if dt == "" {
+		return fmt.Errorf("cannot be empty")
+	}
+	switch dt {
+	case model.DataTypeBool,
+		model.DataTypeInt16, model.DataTypeUint16,
+		model.DataTypeInt32, model.DataTypeUint32,
+		model.DataTypeFloat32, model.DataTypeFloat64,
+		model.DataTypeJSON:
+		return nil
+	default:
+		return fmt.Errorf("unsupported data_type: %s", dt)
+	}
 }
 
 type MqttConfig struct {
@@ -542,8 +587,8 @@ func formatMqttDevice(idx int, d *MQTTDeviceConfig) string {
 		if j == len(d.Topics)-1 {
 			prefix = "    └─ "
 		}
-		fmt.Fprintf(&buf, "%s%-20s qos=%-2d point=%-16s unit=%-6s retain=%v\n",
-			prefix, t.Topic, t.QoS, t.PointName, t.Unit, t.Retain)
+		fmt.Fprintf(&buf, "%s%-20s qos=%-2d point=%-16s type=%-8s src=%-20s unit=%-6s retain=%v\n",
+			prefix, t.Topic, t.QoS, t.PointName, t.DataType, t.Source, t.Unit, t.Retain)
 	}
 
 	return buf.String()
