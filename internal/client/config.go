@@ -427,15 +427,10 @@ func (d *MQTTDeviceConfig) Validate() error {
 	if len(d.Topics) == 0 {
 		return &ValidationError{Field: "topics", Message: "at least one topic required"}
 	}
-	seen := make(map[string]bool, len(d.Topics))
 	for i, t := range d.Topics {
 		if err := t.Validate(); err != nil {
 			return fmt.Errorf("topics[%d]: %w", i, err)
 		}
-		if seen[t.Topic] {
-			return &ValidationError{Field: "topics", Message: fmt.Sprintf("duplicate topic: %s", t.Topic)}
-		}
-		seen[t.Topic] = true
 	}
 	return nil
 }

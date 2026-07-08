@@ -51,7 +51,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 | **主流程管线** | ✅ 100% | conc.WaitGroup 多协程：MQTT Broker → channel → SQLite → 上传循环 |
 | **统一格式日志** | ✅ 100% | `internal/client/log.go` — `logReading()` 统一列宽格式化输出 |
 || **Modbus TCP 轮询** | ✅ ~95% | FC1-4 实现，支持所有数据类型和缩放；写操作已通过 ModbusRuntime 补全；RTU 未实现 |
-| **MQTT Broker（本地）** | ⚠️ ~70% | 可接收数据并转 Reading，但不校验配置中注册的设备/点位；端口 1884（避免与本地服务端 1883 端口冲突） |
+| **MQTT Broker（本地）** | ✅ ~85% | source/data_type 可配置解析（json/plain/kv 三种格式）；TS 自动识别（unix ms/s + RFC3339）；DeviceHash 缓存；设备离线通知（statusHook→notifyCh→MsgTypeNotify）；端口 1884；无认证 ACL；上线通知待做 |
 | **Modbus RTU** | ❌ 0% | 配置结构已定义，无轮询代码 |
 || **Modbus 写操作** | ✅ 100% | FC5/6/16 通过 ModbusRuntime 实现：共用连接+双 goroutine、状态机连接管理、同步 Write 接口含值反算（scale/offset/byte order）、FC/DataType 兼容校验；含单元测试和 modbus-sim 集成验证 |
 
@@ -72,20 +72,21 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 | 功能 | 说明 |
 |------|------|
-| **消息通知协议** | `MsgTypeNotify` 已定义，无处理逻辑 |
 | **MQTT 认证/ACL** | 设计文档完整，代码未实现 |
-| **设备上下线通知** | `device/{SN}/status`（Retain）未实现 |
+| ~~设备上下线通知~~ ⚠️ | MQTT 离线通知已实现；上线通知待 Phase 4；Modbus 离线检测待做 |
 | **TLS/WSS 加密隧道** | 无任何实现 |
 | **规则引擎** | 未开始 |
+| **Modbus RTU** | TCP 已完整，RTU 轮询未实现 |
+| ~~消息通知协议~~ ⚠️ | `MsgTypeNotify` 已接入 sessionLoop；server 侧处理逻辑待做 |
 
 ---
 
 ## 二、关键问题（按影响排序）
 
 1. ~~**服务端数据桥接断路**~~ ✅ 已解决 — `MqttPublisher` + `serializeReadings` 正式接入，`device/{SN}/reading` 数据流通。
-2. **客户端 MQTT 不校验数据** — `handleMqttReading` 接受任何 SN 和点位，不检查是否在 `MqttConfig` 中注册。
+2. ~~**客户端 MQTT 不校验数据**~~ ✅ 已解决 — 审查后发现是伪需求：`routes` map 从 `MqttConfig` 构建，topic 命中后拿到的 deviceName/pointName 100% 在配置中。真正的缺口是 payload 格式硬编码，已通过 Phase 3b（source/data_type 可配置解析）解决。
 3. ~~**Modbus 写操作空实现**~~ ✅ 已解决 — `ModbusRuntime` 实现 FC5/6/16，含状态机、值反算、FC/DataType 兼容校验、单元测试。
-4. **设备上下线通知缺失** — 外部系统无法感知设备在线状态。
+4. **设备上下线通知缺失** — ⚠️ 部分解决：MQTT 设备 session 过期离线通知已实现（statusHook→notifyCh→MsgTypeNotify）；Modbus 设备离线检测待做；上线通知暂未实现（待 Phase 4 ACL 一起）。
 
 ---
 
@@ -174,17 +175,24 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ---
 
-### Phase 3：客户端 MQTT 数据校验（预计 1 天）
+### Phase 3：客户端 MQTT 数据校验 ✅ 已完成（2026-07-05）
 
-**目标**：客户端只接受配置中注册的设备和数据点
+**审查结论**：原计划"校验设备 SN/点位是否在 MqttConfig 中"是伪需求。`routes` map 从 config 构建，topic 命中后的 deviceName/pointName 必然在配置中，自我验证无意义。
 
-| 任务 | 文件 |
-|------|------|
-| 校验设备 SN 是否在 MqttConfig 中注册 | `internal/client/mqtt.go` |
-| 校验数据点名称是否属于该设备 | `internal/client/mqtt.go` |
-| 缓存 DeviceHash（启动时计算一次） | `internal/client/mqtt.go` |
+**实际完成（Phase 3b）**：MQTT payload 可配置解析 — 替代硬编码 `{type,value,quality,ts}` 格式。
 
-**验证**：未注册设备/点位的 MQTT 消息被拒绝，注册的正常通过
+| 任务 | 文件 | 说明 |
+|------|------|------|
+| `TopicConfig` 新增 `source` + `data_type` | `internal/client/config.go` | `source="json:path"` / `"plain:"` / `"kv:key"`；`data_type` 强制声明 |
+| 三种格式解析器 | `internal/client/mqtt.go` | json（扁平+嵌套点号路径）/ plain（标量）/ kv（KEY=VALUE;...） |
+| 类型强校验 | `internal/client/mqtt.go` | float/int/bool/string/json，不匹配报错丢弃 |
+| TS 自动识别 | `internal/client/mqtt.go` | Unix ms/s 自动判、RFC3339 多格式兼容；缺失回退系统时间 |
+| DeviceHash 缓存 | `internal/client/mqtt.go` | 启动时预计算，每消息查表不再算 SHA-256 |
+| `DataType` 迁至 `reading.go` | `internal/model/` | 从 `modbus.go` 迁到 `reading.go`，`modbus.go` 只保留 Modbus 专有类型 |
+| `mqtt-sim` 适配 | `cmd/mqtt-sim/main.go` | payload 简化为 `{value,ts}` |
+| 配置迁移 | `config/client.toml` | 所有 topic 加 `data_type` + `source="json:value"` |
+
+**验证**：`go build ./...` 通过；老配置必报错（source/data_type 强制要求）；三种格式覆盖 90-95% 工业 MQTT 网关场景。
 
 ---
 
@@ -203,7 +211,7 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 
 ---
 
-### Phase 5：设备生命周期管理（预计 1-2 天）
+### Phase 5：设备生命周期管理 — ⚠️ 部分完成（2026-07-05）
 
 **目标**：设备在线/离线状态感知
 
@@ -211,10 +219,12 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
 |------|------|------|
 | ~~客户端定时发送心跳~~ ✅ | `internal/client/client.go` | 已实现 |
 | ~~服务端检测心跳超时~~ ✅ | `internal/server/server.go` | 已实现 |
-| 设备上线/离线 MQTT 通知 | `internal/server/server.go` | `device/{sn}/status`（QoS 1 + Retain） |
-| PostgreSQL 设备状态更新 | `internal/server/cache/postgres.go` | `status` 字段同步 |
+| **MQTT 设备离线通知** ✅ | `internal/client/mqtt.go` + `client.go` | comqtt statusHook（OnDisconnect expire=true）→ notifyCh → sessionLoop select → MsgTypeNotify TCP 发送；notifyCh 非阻塞写入 |
+| MQTT 设备上线通知 | `internal/client/mqtt.go` | 待 Phase 4 ACL 一起实现 |
+| Modbus 设备离线检测 | `internal/client/modbus.go` | 待做：`OfflineThreshold` 超时检测 + 复用同一 notifyCh |
+| PostgreSQL 设备状态更新 | `internal/server/cache/postgres.go` | 待做：`status` 字段同步 |
 
-**验证**：设备断开后 status Topic 收到离线消息；重连后收到在线消息
+**架构**：`uploadLoop` → `sessionLoop`（重命名），新增 `notifyCh <-chan msg.NotifyPayload` 参数。notify 和 upload 在同一条 TCP 连接上并行发送，不经过 SQLite。
 
 ---
 
@@ -277,16 +287,18 @@ LEPG（轻量级边缘穿透网关）是一个基于 Go 的 IoT 边缘网关系�
   ├── Phase 0     Push 数据通路（TB Gateway MQTT + HTTP）
   ├── Phase 1     MQTT Pull 数据桥接（device/{SN}/reading）
   ├── Phase 2     日志规范化 + 单元测试覆盖 + .example 模板 + HTTPS 支持
-  └── Phase 2.5   UploadAck 确认机制（入库确认 + SHA256 去重 + 超时重试 + 触发重连）
+  ├── Phase 2.5   UploadAck 确认机制（入库确认 + SHA256 去重 + 超时重试 + 触发重连）
+  ├── Phase 2.6   Modbus 写操作（FC5/6/16）
+  ├── Phase 3     MQTT payload 可配置解析（source + data_type + TS 自动识别 + DeviceHash 缓存）
+  └── Phase 5 ⚠️  MQTT 设备离线通知（statusHook→notifyCh→MsgTypeNotify）
 
 高 →
-  ├── Phase 3   客户端 MQTT 数据校验
-  ├── Phase 5   设备上下线通知（P0 阻塞项）
+  ├── Phase 4   MQTT 认证 ACL + 上线通知
+  ├── Phase 5   Modbus 离线检测 + PostgreSQL 设备状态
   └── Phase 7   健康检查端点
 
 中 →
-  ├── Phase 4   MQTT 认证 ACL
-  ├── Phase 6   Modbus RTU（写操作已完成）
+  ├── Phase 6   Modbus RTU
   ├── Notify 协议处理
   ├── TTL 数据清理
   └── TB 属性上报

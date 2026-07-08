@@ -27,11 +27,6 @@ type sourceFormat struct {
 	path   string // field path for json/kv, empty for plain
 }
 
-type topicRoute struct {
-	deviceName string
-	topicCfg   *TopicConfig
-}
-
 func parseSource(source string) (sourceFormat, error) {
 	switch {
 	case strings.HasPrefix(source, "json:"):
@@ -110,16 +105,17 @@ func StartMqttBroker(ctx context.Context, ch chan<- model.Reading, notifyCh chan
 		notifyCh:      notifyCh,
 	}, nil)
 
-	routes := make(map[string]topicRoute)
+	topicCount := 0
 	for _, dev := range mqttCfg.Devices {
 		for _, tc := range dev.Topics {
 			sf, err := parseSource(tc.Source)
 			if err != nil {
 				return fmt.Errorf("device %s topic %s: %w", dev.Name, tc.Topic, err)
 			}
-			routes[tc.Topic] = topicRoute{deviceName: dev.Name, topicCfg: tc}
-			server.Subscribe(tc.Topic, int(tc.QoS), func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
-				handleMqttReading(pk.TopicName, pk.Payload, ch, routes, deviceHashes, sf)
+			topicCount++
+			devName := dev.Name
+			server.Subscribe(tc.Topic, topicCount, func(cl *mqtt.Client, sub packets.Subscription, pk packets.Packet) {
+				handleMqttReading(pk.TopicName, pk.Payload, ch, deviceHashes, tc, devName, sf)
 			})
 		}
 	}
@@ -129,7 +125,7 @@ func StartMqttBroker(ctx context.Context, ch chan<- model.Reading, notifyCh chan
 			slog.Error("mqtt broker serve error", "error", err)
 		}
 	}()
-	slog.Info("mqtt broker started", "addr", mqttCfg.BrokerAddr, "topics", len(routes))
+	slog.Info("mqtt broker started", "addr", mqttCfg.BrokerAddr, "topics", topicCount)
 
 	<-ctx.Done()
 	server.Close()
@@ -140,24 +136,19 @@ func handleMqttReading(
 	topic string,
 	payload []byte,
 	ch chan<- model.Reading,
-	routes map[string]topicRoute,
 	deviceHashes map[string]string,
+	tc *TopicConfig,
+	devName string,
 	sf sourceFormat,
 ) {
-	route, ok := routes[topic]
-	if !ok {
-		slog.Warn("mqtt: unknown topic", "topic", topic)
-		return
-	}
-
 	// Extract value and validate against declared type.
 	val, err := extractValue(sf, payload)
 	if err != nil {
-		slog.Error("mqtt: extract value failed", "topic", topic, "source", route.topicCfg.Source, "error", err)
+		slog.Error("mqtt: extract value failed", "topic", topic, "source", tc.Source, "error", err)
 		return
 	}
-	if err := checkDataType(val, route.topicCfg.DataType); err != nil {
-		slog.Error("mqtt: type mismatch", "topic", topic, "data_type", route.topicCfg.DataType, "value", val, "error", err)
+	if err := checkDataType(val, tc.DataType); err != nil {
+		slog.Error("mqtt: type mismatch", "topic", topic, "data_type", tc.DataType, "value", val, "error", err)
 		return
 	}
 
@@ -172,18 +163,18 @@ func handleMqttReading(
 	}
 
 	reading := model.Reading{
-		Device:     deviceHashes[route.deviceName],
-		DeviceName: route.deviceName,
-		Point:      model.HashPoint(route.deviceName, route.topicCfg.PointName),
-		PointName:  route.topicCfg.PointName,
-		DataType:   route.topicCfg.DataType,
-		Value:      model.SerializeValue(route.topicCfg.DataType, val),
+		Device:     deviceHashes[devName],
+		DeviceName: devName,
+		Point:      model.HashPoint(devName, tc.PointName),
+		PointName:  tc.PointName,
+		DataType:   tc.DataType,
+		Value:      model.SerializeValue(tc.DataType, val),
 		Quality:    model.QualityGood,
-		Unit:       route.topicCfg.Unit,
+		Unit:       tc.Unit,
 		Timestamp:  ts,
 	}
 
-	logReading("mqtt", route.deviceName, route.topicCfg.PointName, route.topicCfg.DataType, val, route.topicCfg.Unit)
+	logReading("mqtt", devName, tc.PointName, tc.DataType, val, tc.Unit)
 
 	ch <- reading
 }
