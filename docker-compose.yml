@@ -1,0 +1,34 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_USER: lepgs
+      POSTGRES_PASSWORD: lepgs123
+      POSTGRES_DB: lepgs
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U lepgs -d lepgs"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+
+  lepg-server:
+    build: .
+    ports:
+      - "8883:8883"
+      - "1883:1883"
+      - "8083:8083"
+    environment:
+      LOG_PATH: /app/data/logs
+      DATA_PATH: /app/data/lepgs.db
+    volumes:
+      - ./config/server.toml:/app/config/server.toml:ro
+      - lepg-data:/app/data
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  lepg-data:
