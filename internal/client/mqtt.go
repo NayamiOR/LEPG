@@ -174,7 +174,7 @@ func handleMqttReading(
 		Timestamp:  ts,
 	}
 
-	logReading("mqtt", devName, tc.PointName, tc.DataType, val, tc.Unit)
+	logReading("mqtt", devName, tc.PointName, tc.DataType, val, tc.Unit, ts)
 
 	ch <- reading
 }

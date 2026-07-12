@@ -177,7 +177,7 @@ func (rt *ModbusRuntime) pollOnce(readingCh chan<- model.Reading) {
 			continue
 		}
 
-		logReading("modbus", rt.cfg.Name, point.Name, point.DataType, value, point.Unit)
+		logReading("modbus", rt.cfg.Name, point.Name, point.DataType, value, point.Unit, time.Now().UnixMilli())
 
 		reading := model.Reading{
 			Device:     deviceHash,

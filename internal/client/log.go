@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 	"unicode"
 
 	"LEPG/internal/model"
@@ -11,7 +12,7 @@ import (
 
 // logReading emits a uniformly formatted, column-aligned reading log line.
 // Fields are padded to display-column widths (CJK-aware) so values align visually.
-func logReading(source, device, point string, dataType model.DataType, value any, unit string) {
+func logReading(source, device, point string, dataType model.DataType, value any, unit string, ts int64) {
 	slog.Info("reading",
 		"source", padRight(source, 6),
 		"device", padRight(device, 20),
@@ -19,6 +20,7 @@ func logReading(source, device, point string, dataType model.DataType, value any
 		"type", padRight(string(dataType), 8),
 		"value", truncRight(fmt.Sprintf("%v", value), 12),
 		"unit", padRight(unit, 6),
+		"time", time.UnixMilli(ts).Format("15:04:05.000"),
 	)
 }
 
