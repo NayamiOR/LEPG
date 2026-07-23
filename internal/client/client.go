@@ -142,12 +142,53 @@ func MainFunc(ctx context.Context, cfg *ClientConfig) error {
 		close(ch)
 	})
 
-	// Goroutine: channel → SQLite
+	// MQTT publisher client (only when MQTT broker is configured).
+	var clientPub *ClientPublisher
+	if cfg.Mqtt != nil {
+		var err error
+		clientPub, err = NewClientPublisher(cfg.Mqtt.BrokerAddr)
+		if err != nil {
+			return fmt.Errorf("create mqtt publisher: %w", err)
+		}
+		defer clientPub.Close()
+	}
+
+	// Fan-out: split ch into localCh (SQLite) and pubCh (MQTT publish).
+	pubCh := make(chan model.Reading, cfg.BufferSize)
+	localCh := make(chan model.Reading, cfg.BufferSize)
+
+	mainWg.Go(func() {
+		defer close(pubCh)
+		defer close(localCh)
+		for r := range ch {
+			pubCh <- r
+			localCh <- r
+		}
+	})
+
+	// Goroutine: pubCh → MQTT publish.
+	mainWg.Go(func() {
+		for r := range pubCh {
+			if clientPub != nil {
+				if err := clientPub.PublishReading(r); err != nil {
+					slog.Warn("publish reading failed", "device", r.DeviceName, "error", err)
+				}
+			}
+		}
+	})
+
+	// Goroutine: localCh → SQLite (was previously ch → SQLite).
 	mainWg.Go(func() {
 		batchSize := 10
 		maxInterval := 30 * time.Second
-		consumeAndWrite(ctx, ch, store, batchSize, maxInterval)
+		consumeAndWrite(ctx, localCh, store, batchSize, maxInterval)
 	})
+
+	// HTTP control server.
+	controlSrv := NewControlServer(cfg.ControlListenAddr, clientPub)
+	if err := controlSrv.Start(ctx); err != nil {
+		return fmt.Errorf("start control server: %w", err)
+	}
 
 	// Goroutine: SQLite → upload
 	mainWg.Go(func() {

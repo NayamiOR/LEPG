@@ -47,6 +47,8 @@ type ClientConfig struct {
 
 	Paths PathsConfig // 子结构体，递归填充
 
+	ControlListenAddr string `config:"control.listen_addr" default:"127.0.0.1:9090" sources:"file,env,default"`
+
 	// Unmarshal 字段 — 无 sources tag，由 IUnmarshaler 填充
 	Devices []*DeviceConfig
 	Mqtt    *MqttConfig
