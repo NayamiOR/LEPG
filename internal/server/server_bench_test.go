@@ -4,6 +4,7 @@ import (
 	"LEPG/internal/model"
 	"LEPG/internal/msg"
 	"LEPG/internal/output"
+	"runtime"
 	"testing"
 )
 
@@ -56,6 +57,7 @@ func BenchmarkHandleUpload_12Readings(b *testing.B) {
 		msgs[i] = makeUploadWithReadings(12, i)
 	}
 
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		handleUpload(&discardConn{}, factory, store, pub, router, msgs[i], "CLIENT001", "127.0.0.1:12345")
@@ -77,6 +79,7 @@ func BenchmarkHandleUpload_1Reading(b *testing.B) {
 		msgs[i] = makeUploadWithReadings(1, i)
 	}
 
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		handleUpload(&discardConn{}, factory, store, pub, router, msgs[i], "CLIENT001", "127.0.0.1:12345")
@@ -98,6 +101,7 @@ func BenchmarkHandleUpload_100Readings(b *testing.B) {
 		msgs[i] = makeUploadWithReadings(100, i)
 	}
 
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		handleUpload(&discardConn{}, factory, store, pub, router, msgs[i], "CLIENT001", "127.0.0.1:12345")
@@ -117,6 +121,7 @@ func BenchmarkHandleUpload_DedupHit(b *testing.B) {
 
 	uploadDedup.add(payloadKey(uploadMsg.Payload))
 
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		handleUpload(&discardConn{}, factory, store, pub, router, uploadMsg, "CLIENT001", "127.0.0.1:12345")

@@ -3,6 +3,7 @@ package msg
 import (
 	"LEPG/internal/model"
 	"net"
+	"runtime"
 	"testing"
 )
 
@@ -52,6 +53,7 @@ var sinkErr error
 // This covers: headerAndPayload (6× binary.Write) + CRC16 append.
 func BenchmarkEncode_12Readings(b *testing.B) {
 	msg := preBuiltMsg(makeTestReadings(12))
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		sinkBytes, sinkErr = msg.Encode()
@@ -60,6 +62,7 @@ func BenchmarkEncode_12Readings(b *testing.B) {
 
 func BenchmarkEncode_1Reading(b *testing.B) {
 	msg := preBuiltMsg(makeTestReadings(1))
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		sinkBytes, sinkErr = msg.Encode()
@@ -68,6 +71,7 @@ func BenchmarkEncode_1Reading(b *testing.B) {
 
 func BenchmarkEncode_100Readings(b *testing.B) {
 	msg := preBuiltMsg(makeTestReadings(100))
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		sinkBytes, sinkErr = msg.Encode()
@@ -82,6 +86,7 @@ func BenchmarkDecodeFrame_12Readings(b *testing.B) {
 	msg := preBuiltMsg(makeTestReadings(12))
 	wire := encodeToBytes(msg)
 
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		pr, pw := net.Pipe()
@@ -101,6 +106,7 @@ func BenchmarkDecodeFrame_1Reading(b *testing.B) {
 	msg := preBuiltMsg(makeTestReadings(1))
 	wire := encodeToBytes(msg)
 
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		pr, pw := net.Pipe()
@@ -118,6 +124,7 @@ func BenchmarkDecodeFrame_100Readings(b *testing.B) {
 	msg := preBuiltMsg(makeTestReadings(100))
 	wire := encodeToBytes(msg)
 
+	runtime.GC()
 	b.ResetTimer()
 	for i := 0; i < b.N; i++ {
 		pr, pw := net.Pipe()
