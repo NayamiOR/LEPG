@@ -185,74 +185,40 @@ func (m *Msg) Encode() ([]byte, error) {
 func DecodeFrame(conn net.Conn) (Msg, error) {
 	var m Msg
 
-	// Read head
-	magicBuf := make([]byte, MagicSize)
-	_, err := io.ReadFull(conn, magicBuf)
-	if err != nil {
+	// Read entire 13-byte header in one call.
+	headerBuf := make([]byte, HeaderSize)
+	if _, err := io.ReadFull(conn, headerBuf); err != nil {
 		return m, err
 	}
-	if binary.BigEndian.Uint16(magicBuf) != MagicNumber {
+
+	// Parse header fields from slices — zero allocation.
+	m.Magic = binary.BigEndian.Uint16(headerBuf[0:2])
+	if m.Magic != MagicNumber {
 		return m, errors.ErrInvalidMagic
 	}
-	versionBuf := make([]byte, VersionSize)
-	_, err = io.ReadFull(conn, versionBuf)
-	if err != nil {
-		return m, err
-	}
-	flagsBuf := make([]byte, FlagsSize)
-	_, err = io.ReadFull(conn, flagsBuf)
-	if err != nil {
-		return m, err
-	}
-	typeBuf := make([]byte, TypeSize)
-	_, err = io.ReadFull(conn, typeBuf)
-	if err != nil {
-		return m, err
-	}
-	msgIDBuf := make([]byte, MsgIDSize)
-	_, err = io.ReadFull(conn, msgIDBuf)
-	if err != nil {
-		return m, err
-	}
-	payloadLenBuf := make([]byte, PayloadLenSize)
-	_, err = io.ReadFull(conn, payloadLenBuf)
-	if err != nil {
-		return m, err
-	}
-	timestampBuf := make([]byte, TimestampSize)
-	_, err = io.ReadFull(conn, timestampBuf)
-	if err != nil {
+	m.Version = headerBuf[2]
+	m.Flags = headerBuf[3]
+	m.Type = headerBuf[4]
+	m.MsgID = binary.BigEndian.Uint16(headerBuf[5:7])
+	m.PayloadLen = binary.BigEndian.Uint16(headerBuf[7:9])
+	m.Timestamp = utils.Timestamp(binary.BigEndian.Uint32(headerBuf[9:13]))
+
+	// Read payload + CRC in one call.
+	restLen := int(m.PayloadLen) + ChecksumSize
+	restBuf := make([]byte, restLen)
+	if _, err := io.ReadFull(conn, restBuf); err != nil {
 		return m, err
 	}
 
-	payloadLen := binary.BigEndian.Uint16(payloadLenBuf)
+	m.Payload = restBuf[:m.PayloadLen]
+	m.Checksum = binary.BigEndian.Uint16(restBuf[m.PayloadLen:])
 
-	m.Magic = binary.BigEndian.Uint16(magicBuf)
-	m.Version = versionBuf[0]
-	m.Flags = flagsBuf[0]
-	m.Type = typeBuf[0]
-	m.MsgID = binary.BigEndian.Uint16(msgIDBuf)
-	m.PayloadLen = payloadLen
-	m.Timestamp = utils.Timestamp(binary.BigEndian.Uint32(timestampBuf))
-
-	// Read payload and checksum
-	payloadBuf := make([]byte, payloadLen)
-	_, err = io.ReadFull(conn, payloadBuf)
-	if err != nil {
-		return m, err
-	}
-	checksumBuf := make([]byte, ChecksumSize)
-	_, err = io.ReadFull(conn, checksumBuf)
-	if err != nil {
-		return m, err
-	}
-
-	m.Payload = payloadBuf
-	m.Checksum = binary.BigEndian.Uint16(checksumBuf)
-
-	// Calculate checksum over header + payload and verify
-	checksum := utils.CalChecksum(m.headerAndPayload())
-	if checksum != m.Checksum {
+	// CRC over [header | payload] — concatenate once instead of
+	// re-serialising through headerAndPayload + binary.Write chain.
+	full := make([]byte, 0, HeaderSize+int(m.PayloadLen))
+	full = append(full, headerBuf...)
+	full = append(full, m.Payload...)
+	if checksum := utils.CalChecksum(full); checksum != m.Checksum {
 		return m, errors.ErrChecksumMismatch
 	}
 
