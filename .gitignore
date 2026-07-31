@@ -46,3 +46,9 @@ logs/
 .env/
 server.toml
 client.toml
+
+cpu
+cpu.prof
+mem
+mem.prof
+/*.txt
