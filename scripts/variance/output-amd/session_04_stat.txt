@@ -1,0 +1,27 @@
+goos: windows
+goarch: amd64
+pkg: LEPG/internal/server
+cpu: AMD Ryzen 7 8845H w/ Radeon 780M Graphics
+                            │ C:\Nayami\Projects\LEPG\scripts\variance\output\session_04_raw.txt │
+                            │                               sec/op                               │
+HandleUpload_1Reading-16                                                             20.30µ ± 1%
+HandleUpload_12Readings-16                                                           30.28µ ± 2%
+HandleUpload_100Readings-16                                                          93.37µ ± 2%
+HandleUpload_DedupHit-16                                                             2.181µ ± 1%
+geomean                                                                              18.81µ
+
+                            │ C:\Nayami\Projects\LEPG\scripts\variance\output\session_04_raw.txt │
+                            │                                B/op                                │
+HandleUpload_1Reading-16                                                            10.82Ki ± 1%
+HandleUpload_12Readings-16                                                          23.85Ki ± 0%
+HandleUpload_100Readings-16                                                         125.5Ki ± 0%
+HandleUpload_DedupHit-16                                                              444.0 ± 0%
+geomean                                                                             10.88Ki
+
+                            │ C:\Nayami\Projects\LEPG\scripts\variance\output\session_04_raw.txt │
+                            │                             allocs/op                              │
+HandleUpload_1Reading-16                                                              252.0 ± 0%
+HandleUpload_12Readings-16                                                            342.0 ± 0%
+HandleUpload_100Readings-16                                                           997.0 ± 0%
+HandleUpload_DedupHit-16                                                              25.00 ± 0%
+geomean                                                                               215.3

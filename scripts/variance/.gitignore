@@ -1,0 +1,7 @@
+.venv/
+__pycache__/
+*.pyc
+.ipynb_checkpoints/
+
+# 生成的 PNG 图（可再生，有数据随时重画）
+output*/**/*.png

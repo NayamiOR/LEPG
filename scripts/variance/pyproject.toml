@@ -1,0 +1,16 @@
+[project]
+name = "variance"
+version = "0.1.0"
+description = "方差之方差实验: 笔记本 benchmark 误差的误差分析"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+    "pandas>=2.0",
+    "matplotlib>=3.8",
+]
+
+[dependency-groups]
+dev = [
+    "jupyter>=1.0",
+    "ipykernel>=6.0",
+]

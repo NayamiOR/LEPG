@@ -1,0 +1,27 @@
+goos: windows
+goarch: amd64
+pkg: LEPG/internal/server
+cpu: 12th Gen Intel(R) Core(TM) i5-12500H
+                            │ D:\Nayami\Projects\LEPG\scripts\variance\output\session_04_raw.txt │
+                            │                               sec/op                               │
+HandleUpload_1Reading-16                                                             53.15µ ± 4%
+HandleUpload_12Readings-16                                                           76.87µ ± 7%
+HandleUpload_100Readings-16                                                          213.4µ ± 3%
+HandleUpload_DedupHit-16                                                             3.994µ ± 1%
+geomean                                                                              43.20µ
+
+                            │ D:\Nayami\Projects\LEPG\scripts\variance\output\session_04_raw.txt │
+                            │                                B/op                                │
+HandleUpload_1Reading-16                                                            10.82Ki ± 0%
+HandleUpload_12Readings-16                                                          23.74Ki ± 0%
+HandleUpload_100Readings-16                                                         122.9Ki ± 0%
+HandleUpload_DedupHit-16                                                              444.0 ± 0%
+geomean                                                                             10.82Ki
+
+                            │ D:\Nayami\Projects\LEPG\scripts\variance\output\session_04_raw.txt │
+                            │                             allocs/op                              │
+HandleUpload_1Reading-16                                                              252.0 ± 0%
+HandleUpload_12Readings-16                                                            339.0 ± 0%
+HandleUpload_100Readings-16                                                           952.0 ± 0%
+HandleUpload_DedupHit-16                                                              25.00 ± 0%
+geomean                                                                               212.3
