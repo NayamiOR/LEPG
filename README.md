@@ -2,6 +2,15 @@
 
 > **Lightweight Edge Piercing Gateway** — 轻量级 IoT 边缘网关与数据中继系统
 
+## 特性速览
+
+- **云边隧道**：自研 TLV 隧道协议 + 握手鉴权 + 心跳保活 + 断线自动重连，弱网环境高可靠传输
+- **多协议采集**：Modbus TCP 读写（FC1-4 读 + FC5/6/16 写）、MQTT 设备接入
+- **数据不丢**：SQLite 本地缓存（WAL）+ 断点续传 + UploadAck 确认去重
+- **北向输出**：ThingsBoard MQTT/HTTP 双通道 Sinker + MQTT Pull 桥接
+- **反向控制**：云端下行指令（HTTP/MQTT 通道）改写设备寄存器，形成数据-控制闭环
+- **轻量部署**：单二进制 + Docker Compose 一键部署，树莓派级设备可跑
+
 ## 产品定位与场景
 
 **LEPG** 面向 **几百设备规模** 的个人开发者、小团队和轻工业场景，主打 **开箱即用的部署体验** + **工业级的稳定性能**：
@@ -58,6 +67,35 @@
 
 ## 系统架构
 
+```mermaid
+flowchart LR
+    subgraph Edge["边缘侧（树莓派 / 小主机 / OpenWrt）"]
+        DEV["现场设备<br/>Modbus RTU/TCP · MQTT"]
+        CLIENT["LEPG 客户端 (lepgc)<br/>协议适配 · 本地缓存 · TLV 隧道"]
+        DEV <--> CLIENT
+    end
+
+    subgraph Cloud["云端（云服务器 / 小 K3s / Docker Compose）"]
+        SERVER["LEPG 服务端 (lepgs)<br/>TLV 隧道 · 设备注册 · 数据持久化"]
+        BROKER["内嵌 MQTT Broker<br/>comqtt (TCP :1883 / WS :8083)"]
+        SINK["北向 Sinker<br/>TB MQTT / TB HTTP / MQTT Pull"]
+        SERVER <--> BROKER
+        BROKER --> SINK
+    end
+
+    subgraph Consumer["用户侧"]
+        APP["MQTT 客户端<br/>订阅设备数据"]
+        TB["ThingsBoard 平台"]
+        CTRL["控制指令<br/>HTTP / MQTT"]
+    end
+
+    CLIENT == "TLV 隧道 (TCP :8883)" ==> SERVER
+    SINK --> TB
+    BROKER --> APP
+    CTRL -.->|下行指令| CLIENT
+    CTRL -.->|下行指令| DEV
+```
+
 ### 全链路 Workflow
 
 整个场景 Workflow 分为四层：
@@ -75,17 +113,17 @@
 | 2. 协议适配解析     | 边缘网关客户端          | 协议适配模块            | ① 底层调用开源编解码库解析原始协议帧<br>② 多设备轮询调度、超时重试<br>③ 解析后的原始值按用户配置映射成结构化 KV（如寄存器0x01映射为 `temperature: 25.6`）                             | ✅ Modbus TCP<br>⚠️ Modbus RTU |
 | 3. 本地数据预处理    | 边缘网关客户端          | 数据预处理模块           | ① 断网时本地缓存数据，联网后自动补传<br>② 可选异常数据过滤/打标<br>③ 不需要预处理的场景支持直接透传原始数据                                                            | ✅         |
 | 4. 内网数据穿透到公网  | 边缘网关客户端+中继端（服务端） | 自定义 TCP 隧道 + 心跳保活  | ① 边缘客户端启动后自动和中继端建立长连接，完成身份认证<br>② 边缘客户端把结构化数据通过长连接传到中继端<br>③ 心跳保活 + 断线重连                                                  | ✅         |
-| 5. 数据标准化输出与转发 | 中继端（服务端）         | 数据转发桥             | 中继端将设备数据经过缓冲、过滤、规则化处理后，通过北向接口对外暴露标准消费接口<br>① 标准 MQTT Topic<br>② 标准 HTTP Webhook（规划中）<br>③ 支持转发到第三方系统（规划中） | ✅ MQTT<br>⚠️ HTTP  |
+| 5. 数据标准化输出与转发 | 中继端（服务端）         | 数据转发桥             | 中继端将设备数据经过缓冲、过滤、规则化处理后，通过北向接口对外暴露标准消费接口<br>① 标准 MQTT Topic<br>② ThingsBoard MQTT/HTTP Sinker<br>③ MQTT Pull 桥接（`device/{SN}/reading`） | ✅ MQTT<br>✅ TB HTTP<br>✅ MQTT Pull |
 | 6. 用户侧消费数据    | 用户侧              | 无（用户自有业务）         | 用户直接用标准 MQTT 客户端/HTTP 请求就能拿到结构化的设备数据                                                                                                          | 无          |
 
 #### 下行链路
 
 | 链路环节          | 所属角色        | 核心模块          | 具体要做的事                                                    | 状态 |
 | ------------- | ----------- | ------------- | --------------------------------------------------------- | -- |
-| 1. 用户下发控制指令   | 用户侧         | 无             | 用户按约定格式下发控制指令到公网服务端的对应 MQTT Topic/HTTP 接口           | 无  |
-| 2. 指令透传到边缘网关  | 中继端（服务端）+边缘客户端 | 穿透服务端+穿透客户端模块 | 中继端根据设备 ID 找到对应的边缘网关长连接，把指令转发到边缘客户端                       | 🔄  |
-| 3. 指令转成设备私有协议 | 边缘网关客户端     | 协议适配模块        | 把结构化的控制指令转成设备能识别的私有协议帧                                | 🔄  |
-| 4. 指令下发到设备执行  | 边缘网关客户端     | 协议适配模块        | 把协议帧下发到对应的现场设备，设备执行后返回响应，原路返回给用户侧                       | 🔄  |
+| 1. 用户下发控制指令   | 用户侧         | 无             | 用户按约定格式下发控制指令到客户端 HTTP 控制端点（`POST /command`）或 MQTT 命令 Topic（`device/{SN}/command`） | ✅  |
+| 2. 指令分发到设备   | 边缘网关客户端     | 控制服务器 + Modbus 运行时 | 控制服务器解析指令，查找到对应设备与点位，校验读写权限                          | ✅  |
+| 3. 指令转成设备私有协议 | 边缘网关客户端     | Modbus Runtime | 把结构化控制指令转成 Modbus 写操作（FC5 写线圈 / FC6 写单寄存器 / FC16 写多寄存器） | ✅  |
+| 4. 指令下发到设备执行  | 边缘网关客户端     | 协议适配模块        | 写入设备寄存器/线圈，设备执行后返回响应，原路回传结果                          | ✅  |
 
 > ✅ 已实现 | ⚠️ 部分实现 | 🔄 规划中 | ❌ 未实现
 
@@ -95,9 +133,9 @@
 
 1. **边缘端部署**：把温湿度传感器接在树莓派串口/网络上，树莓派运行 LEPG 客户端，配置传感器参数和中继端地址
 2. **自动采集**：网关自动按配置轮询传感器，把读到的原始值转成 `{"temperature": 25.6}`
-3. **数据传输**：数据通过加密长连接传到中继端，中继端处理后推送到用户的专属 MQTT Topic
+3. **数据传输**：数据通过鉴权长连接传到中继端，中继端处理后推送到用户的专属 MQTT Topic
 4. **远程监控**：用户在公司用手机 MQTT 客户端订阅这个 Topic，直接就能看到家里的实时温度
-5. **远程控制**（规划中）：用户发指令 `{"relay":1}` 到对应 Topic，网关收到后转成 Modbus 写寄存器的指令下发
+5. **远程控制**：用户发指令 `{"device":"sensor-1","writes":[{"point":"relay","value":1}]}` 到 `POST /command`，网关收到后转成 Modbus 写寄存器的指令下发
 
 ---
 
@@ -112,13 +150,18 @@
 
 - **数据采集**：
   - ✅ Modbus TCP 轮询（支持 FC1-4，所有数据类型）
+  - ✅ Modbus 写操作（FC5 写线圈 / FC6 写单寄存器 / FC16 写多寄存器，`access = "rw"` 点位）
   - ⚠️ Modbus RTU 轮询（规划中）
-  - ⚠️ MQTT 设备接入（部分实现）
+  - ✅ MQTT 设备接入（虚拟设备 + 数据校验）
 - **数据预处理与缓存**：
   - ✅ SQLite 本地缓存（WAL 模式，状态追踪）
-  - ✅ 断点续传
+  - ✅ 断点续传 + UploadAck 确认（服务端入库确认 + SHA256 去重 + 客户端超时重试 + 连续超时触发重连）
   - ⚠️ 异常数据过滤/打标（规划中）
   - ✅ 透传原始数据支持
+- **反向控制**：
+  - ✅ HTTP 控制服务器（`POST /command`，读写权限校验）
+  - ✅ MQTT 命令发布（`device/{SN}/command`）
+  - ✅ Modbus 写运行时（写线圈/单寄存器/多寄存器）
 - **边缘计算**（规划中）：高频数据本地预聚合
 
 ### 中继端
@@ -129,7 +172,7 @@
 
 - **多来源数据整合**：✅ 统一接收多个边缘网关上报的异构设备数据
 - **南向对接**：✅ 适配工业协议（Modbus TCP），通过边缘网关统一接入
-- **北向数据服务**：✅ 对外提供 MQTT 接口，⚠️ HTTP Webhook（规划中）
+- **北向数据服务**：✅ 对外提供 MQTT 接口，✅ ThingsBoard MQTT/HTTP Sinker，✅ MQTT Pull 桥接
 - **数据处理管线**：✅ PostgreSQL 持久化存储，⚠️ 规则引擎（规划中）
 - **设备管理**：
   - ✅ 设备注册表（PostgreSQL）
@@ -157,13 +200,30 @@
 负责提供北向接口，将处理后的设备数据推送到外部系统：
 
 - ✅ MQTT Broker 转发（TCP + WebSocket）
+- ✅ ThingsBoard MQTT Sinker（对接 TB Gateway MQTT）
+- ✅ ThingsBoard HTTP Sinker（含 HTTPS 支持）
+- ✅ MQTT Pull 桥接（`device/{SN}/reading`，JSON 批量数组）
+- ⚠️ 通用 MQTT Sinker（对接非 TB 平台，规划中）
 - ⚠️ HTTP Webhook 推送（规划中）
-- ⚠️ 第三方 IoT 平台对接（规划中）
 
 #### 调试工具（规划中）
 
 - 远程日志拉取
 - 命令交互终端
+
+---
+
+## 性能测试（Phase 1）
+
+针对核心热路径的 Go Benchmark 结果（`go test -bench .`，2026-08 优化后）：
+
+| 基准 | 场景 | 优化前 | 优化后 | 说明 |
+|------|------|--------|--------|------|
+| `DecodeFrame` | 解析 12 readings 数据帧 | 84μs / 32 allocs | **12.5μs / 16 allocs** | CRC 查表法 + IO 合并，约 **6.7x 提速** |
+| `HandleUpload` | 服务端处理 12 readings 上传 | — | ~40-50μs | 含入库与响应构造 |
+| `DedupHit` | UploadAck 去重命中 | — | ~3.6μs | SHA256 索引查找 |
+
+> 优化手段：CRC16 查表法替代逐位计算、读写 IO 合并减少系统调用、预分配缓冲区。详见 `internal/msg/msg_bench_test.go` 与 `bench.txt`。
 
 ---
 
@@ -173,7 +233,7 @@
 
 ```bash
 # 克隆仓库
-git clone https://github.com/nayami/lepg.git
+git clone https://github.com/nayamior/lepg.git
 cd lepg
 
 # 构建客户端和服务端
@@ -235,15 +295,14 @@ make simmqtt
 make sim
 ```
 
-### Docker 部署（规划中）
+### Docker 部署
 
 ```bash
-# 云端部署中继服务器
-docker-compose -f docker-compose.server.yml up -d
-
-# 边缘端部署网关
-docker-compose -f docker-compose.client.yml up -d
+# 云端一键部署（PostgreSQL + lepg-server）
+docker-compose up -d
 ```
+
+已提供 `Dockerfile` 与 `docker-compose.yml`，编排 PostgreSQL 与中继服务端，支持云端一键容器化部署。
 
 ### K3s 部署（规划中）
 
@@ -432,6 +491,8 @@ LEPG 使用自定义的 TLV (Type-Length-Value) 协议进行数据传输：
 | 0x06  | HeartbeatAck     | 心跳响应   |
 | 0x07  | Notify           | 通知（规划） |
 
+> 反向控制指令不走 TLV 隧道消息，而是复用 HTTP `POST /command`（客户端内置控制服务器）或 MQTT `device/{SN}/command` Topic，由客户端 Modbus 运行时转换为写操作。
+
 详见 [docs/design/message-protocol.md](docs/design/message-protocol.md)
 
 ---
@@ -445,6 +506,7 @@ LEPG 使用自定义的 TLV (Type-Length-Value) 协议进行数据传输：
 - SQLite 本地缓存（WAL 模式，状态追踪）
 - PostgreSQL 持久化存储
 - Modbus TCP 轮询（FC1-4，所有数据类型）
+- **Modbus 写操作**（FC5 写线圈 / FC6 写单寄存器 / FC16 写多寄存器，`access = "rw"`）
 - 心跳保活与断线重连
 - 设备注册表（PostgreSQL）
 - 连接管理（内存版 + Redis 版）
@@ -458,18 +520,21 @@ LEPG 使用自定义的 TLV (Type-Length-Value) 协议进行数据传输：
 - 上传失败自动重连 + 续传（断点续传增强）
 - 配置文件 .example 模板化
 - **UploadAck 确认机制**（服务端入库确认 + SHA256 去重 + 客户端超时重试 + 连续超时触发重连）
+- **反向控制 R1/R2**：HTTP 控制服务器（`POST /command`）+ MQTT 命令发布（`device/{SN}/command`）+ Modbus 写运行时
+- **Docker 容器化部署**（Dockerfile + docker-compose）
+- **设备上下线 MQTT 通知**（`device/{SN}/status`）
+- **MQTT 数据校验与设备生命周期管理**（source 可配置解析 + data_type 强校验 + TS 自动识别）
+- **性能优化**：CRC 查表法 + IO 合并（DecodeFrame 12 readings 84μs → 12.5μs，allocs 32 → 16）
 
 ### 进行中 / 近期计划
 
-- Modbus 写操作（FC5/6/16）
-- 设备上下线 MQTT 通知（`device/{SN}/status`）
-- 客户端 MQTT 数据校验
+- Modbus RTU 轮询
 - MQTT 认证与 ACL
 - HTTP 健康检查端点
+- 客户端固件版本展示
 
 ### 未来规划
 
-- Modbus RTU 支持
 - Prometheus 指标导出
 - TLS/WSS 加密隧道
 - 基础规则引擎（阈值告警）

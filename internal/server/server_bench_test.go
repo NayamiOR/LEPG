@@ -6,6 +6,7 @@ import (
 	"LEPG/internal/output"
 	"runtime"
 	"testing"
+
 )
 
 // ── helpers ──────────────────────────────────────────────────
@@ -42,6 +43,28 @@ func floatToString(f float64) string {
 
 var benchSink bool
 
+func BenchmarkHandleUpload_1Reading(b *testing.B) {
+	uploadDedup.clear()
+	store := newMockStore()
+	pub := newMockPublisher()
+	sink := newMockSinker("bench-sink")
+	router := output.NewOutputRouter([]output.Sinker{sink})
+	factory := msg.NewMsgFactory()
+
+	msgs := make([]*msg.Msg, b.N)
+	for i := 0; i < b.N; i++ {
+		msgs[i] = makeUploadWithReadings(1, i)
+	}
+
+	runtime.GC()
+	b.ResetTimer()
+	for i := 0; i < b.N; i++ {
+		handleUpload(&discardConn{}, factory, store, pub, router, msgs[i], "CLIENT001", "127.0.0.1:12345")
+	}
+	router.Shutdown()
+	benchSink = len(sink.getSendCalls()) > 0
+}
+
 // ── M2: handleUpload (full pipeline, unique payload per iteration) ──
 
 func BenchmarkHandleUpload_12Readings(b *testing.B) {
@@ -55,28 +78,6 @@ func BenchmarkHandleUpload_12Readings(b *testing.B) {
 	msgs := make([]*msg.Msg, b.N)
 	for i := 0; i < b.N; i++ {
 		msgs[i] = makeUploadWithReadings(12, i)
-	}
-
-	runtime.GC()
-	b.ResetTimer()
-	for i := 0; i < b.N; i++ {
-		handleUpload(&discardConn{}, factory, store, pub, router, msgs[i], "CLIENT001", "127.0.0.1:12345")
-	}
-	router.Shutdown()
-	benchSink = len(sink.getSendCalls()) > 0
-}
-
-func BenchmarkHandleUpload_1Reading(b *testing.B) {
-	uploadDedup.clear()
-	store := newMockStore()
-	pub := newMockPublisher()
-	sink := newMockSinker("bench-sink")
-	router := output.NewOutputRouter([]output.Sinker{sink})
-	factory := msg.NewMsgFactory()
-
-	msgs := make([]*msg.Msg, b.N)
-	for i := 0; i < b.N; i++ {
-		msgs[i] = makeUploadWithReadings(1, i)
 	}
 
 	runtime.GC()
