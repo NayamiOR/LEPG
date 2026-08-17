@@ -4,7 +4,6 @@ import (
 	"LEPG/internal/errors"
 	"LEPG/internal/model"
 	"LEPG/internal/utils"
-	"bytes"
 	"encoding/binary"
 	stderrors "errors"
 	"io"
@@ -113,7 +112,7 @@ func (f *MsgFactory) NewMsg(t uint8, packet Packable) (*Msg, error) {
 		Timestamp:  utils.NewTimestamp(),
 		Payload:    payload,
 	}
-	msg.Checksum = utils.CalChecksum(msg.headerAndPayload())
+	msg.Checksum = 0
 
 	return msg, nil
 }
@@ -149,37 +148,25 @@ func ParseMsg(m *Msg) (Packable, error) {
 	return ctor(m)
 }
 
-// headerAndPayload 序列化固定头部字段与 payload，即 checksum 的覆盖范围。
-func (m *Msg) headerAndPayload() []byte {
-	buf := new(bytes.Buffer)
-
-	// Fixed-size header fields
-	binary.Write(buf, binary.BigEndian, m.Magic)
-	binary.Write(buf, binary.BigEndian, m.Version)
-	binary.Write(buf, binary.BigEndian, m.Flags)
-	binary.Write(buf, binary.BigEndian, m.Type)
-	binary.Write(buf, binary.BigEndian, m.MsgID)
-	binary.Write(buf, binary.BigEndian, m.PayloadLen)
-	binary.Write(buf, binary.BigEndian, m.Timestamp)
-
-	// Payload if present
-	if m.Payload != nil {
-		buf.Write(m.Payload)
-	}
-
-	return buf.Bytes()
-}
-
 func (m *Msg) Encode() ([]byte, error) {
-	buf := new(bytes.Buffer)
+	totalLen := HeaderSize + len(m.Payload) + CrcSize
+	buf := make([]byte, totalLen)
 
-	// Header + payload
-	buf.Write(m.headerAndPayload())
+	binary.BigEndian.PutUint16(buf[0:2], m.Magic)
+	buf[2] = m.Version
+	buf[3] = m.Flags
+	buf[4] = m.Type
+	binary.BigEndian.PutUint16(buf[5:7], m.MsgID)
+	binary.BigEndian.PutUint16(buf[7:9], uint16(len(m.Payload)))
+	binary.BigEndian.PutUint32(buf[9:13], uint32(m.Timestamp))
 
-	// Checksum
-	binary.Write(buf, binary.BigEndian, m.Checksum)
+	copy(buf[HeaderSize:HeaderSize+len(m.Payload)], m.Payload)
 
-	return buf.Bytes(), nil
+	checksum := utils.CalChecksum(buf[:HeaderSize+len(m.Payload)])
+	binary.BigEndian.PutUint16(buf[HeaderSize+len(m.Payload):], checksum)
+	m.Checksum = checksum
+
+	return buf, nil
 }
 
 func DecodeFrame(conn net.Conn) (Msg, error) {

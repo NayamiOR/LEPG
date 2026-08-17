@@ -10,7 +10,6 @@ import (
 
 	"LEPG/internal/errors"
 	"LEPG/internal/model"
-	"LEPG/internal/utils"
 )
 
 func TestNewMsg(t *testing.T) {
@@ -333,7 +332,6 @@ func TestMsgFrameRoundTrip(t *testing.T) {
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			original := tt.msg
-			original.Checksum = utils.CalChecksum(original.headerAndPayload())
 
 			encoded, err := original.Encode()
 			if err != nil {
@@ -361,7 +359,6 @@ func TestDecodeFrameChecksumMismatch(t *testing.T) {
 		Magic: MagicNumber, Version: 1, Type: MsgTypeUpload, MsgID: 1,
 		Payload: []byte{1, 2, 3, 4, 5},
 	}
-	msg.Checksum = utils.CalChecksum(msg.headerAndPayload())
 
 	encoded, err := msg.Encode()
 	if err != nil {
@@ -391,7 +388,6 @@ func TestDecodeFrameInvalidMagic(t *testing.T) {
 		Magic: MagicNumber, Version: 1, Type: MsgTypeUpload, MsgID: 1,
 		Payload: []byte{1, 2, 3},
 	}
-	msg.Checksum = utils.CalChecksum(msg.headerAndPayload())
 
 	encoded, err := msg.Encode()
 	if err != nil {
@@ -409,8 +405,8 @@ func TestChecksumCoversHeader(t *testing.T) {
 	// 两个 Msg 仅在头部字段 Type 上不同；若 checksum 覆盖头部，二者 checksum 必须不同。
 	m1 := &Msg{Magic: MagicNumber, Version: 1, Type: MsgTypeUpload, Payload: []byte("x")}
 	m2 := &Msg{Magic: MagicNumber, Version: 1, Type: MsgTypeHeartbeat, Payload: []byte("x")}
-	m1.Checksum = utils.CalChecksum(m1.headerAndPayload())
-	m2.Checksum = utils.CalChecksum(m2.headerAndPayload())
+	if _, err := m1.Encode(); err != nil { t.Fatal(err) }
+	if _, err := m2.Encode(); err != nil { t.Fatal(err) }
 	if m1.Checksum == m2.Checksum {
 		t.Fatal("checksum must differ when a header field differs")
 	}
