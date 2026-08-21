@@ -172,12 +172,12 @@ func HandleConnection(conn net.Conn, cfg *ServerConfig, s cache.Store, publisher
 // handleUpload 解析并持久化上传的传感器读数。
 func handleUpload(conn net.Conn, factory *msg.MsgFactory, s cache.Store, publisher EventPublisher, router *output.OutputRouter, message *msg.Msg, sn, remoteAddr string) {
 	key := payloadKey(message.Payload)
-	if uploadDedup.exists() {
+	if uploadDedup.exists(key) {
 		sendAck(conn, factory, msg.MsgTypeUploadAck, message.MsgID, msg.Ok)
 		slog.Info("duplicate upload, skipped save", "sn", sn, "msg_id", message.MsgID)
 		return
 	}
-	uploadDedup.add(payloadKey(message.Payload))
+	uploadDedup.add(key)
 
 	uploadParsed, err := msg.ParseMsg(message)
 	if err != nil {
@@ -324,6 +324,10 @@ func sendAck(conn net.Conn, factory *msg.MsgFactory, ackType uint8, reqMsgID uin
 	encoded, err := resp.Encode()
 	if err != nil {
 		slog.Error("failed to encode ack", "type", ackType, "error", err)
+		return
+	}
+	if resp.Checksum == 0 {
+		slog.Error("failed to compute checksum", "type", ackType, "error", err)
 		return
 	}
 	if _, err := conn.Write(encoded); err != nil {
