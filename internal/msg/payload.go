@@ -1,10 +1,10 @@
 package msg
 
 import (
-	"bytes"
 	"encoding/binary"
-	"encoding/gob"
 	"fmt"
+
+	"LEPG/internal/model"
 )
 
 // --- HandshakePayload ---
@@ -74,19 +74,118 @@ func (p *AckPayload) Decode(data []byte) error {
 }
 
 // --- UploadPayload ---
-// 序列化沿用 client/server 现有的 gob 格式，仅做接口包装。
+// Wire（大端序）: [Count:4B] + Count × Reading
+// Reading: [ID:8B][DevLen:2B][Device][NameLen:2B][DeviceName][PointLen:2B][Point]
+//          [PointNameLen:2B][PointName][DataTypeLen:2B][DataType][ValLen:2B][Value]
+//          [Quality:1B][UnitLen:2B][Unit][Timestamp:8B]
+// 2026-08-19 起由 gob 改为手写 TLV：gob 在独立流协议下每次都要重传类型定义并重编译
+// （compileDec ~13µs/次协议税），手写格式与项目其他 payload（Handshake/Notify）风格统一。
+
+func appendTLVString(b []byte, s string) []byte {
+	b = binary.BigEndian.AppendUint16(b, uint16(len(s)))
+	return append(b, s...)
+}
+
+func readTLVString(data []byte, off *int) (string, error) {
+	if *off+2 > len(data) {
+		return "", fmt.Errorf("truncated string length")
+	}
+	n := int(binary.BigEndian.Uint16(data[*off : *off+2]))
+	*off += 2
+	if *off+n > len(data) {
+		return "", fmt.Errorf("truncated string")
+	}
+	s := string(data[*off : *off+n])
+	*off += n
+	return s, nil
+}
+
+// minReadingLen 是最小单条 Reading 的 wire 长度（所有字符串为空时）：8+2+2+2+2+2+2+1+2+8 = 31
+const minReadingLen = 31
 
 func (p *UploadPayload) Encode() ([]byte, error) {
-	var buf bytes.Buffer
-	if err := gob.NewEncoder(&buf).Encode(p.Readings); err != nil {
-		return nil, fmt.Errorf("upload payload encode: %w", err)
+	total := 4
+	for i := range p.Readings {
+		r := &p.Readings[i]
+		for _, s := range []string{r.Device, r.DeviceName, r.Point, r.PointName, string(r.DataType), r.Value, r.Unit} {
+			if len(s) > 65535 {
+				return nil, fmt.Errorf("upload payload encode: string field too long: %d bytes", len(s))
+			}
+			total += 2 + len(s)
+		}
+		total += 8 + 1 + 8 // ID + Quality + Timestamp
 	}
-	return buf.Bytes(), nil
+	buf := make([]byte, 0, total)
+	buf = binary.BigEndian.AppendUint32(buf, uint32(len(p.Readings)))
+	for i := range p.Readings {
+		r := &p.Readings[i]
+		buf = binary.BigEndian.AppendUint64(buf, uint64(r.ID))
+		buf = appendTLVString(buf, r.Device)
+		buf = appendTLVString(buf, r.DeviceName)
+		buf = appendTLVString(buf, r.Point)
+		buf = appendTLVString(buf, r.PointName)
+		buf = appendTLVString(buf, string(r.DataType))
+		buf = appendTLVString(buf, r.Value)
+		buf = append(buf, byte(r.Quality))
+		buf = appendTLVString(buf, r.Unit)
+		buf = binary.BigEndian.AppendUint64(buf, uint64(r.Timestamp))
+	}
+	return buf, nil
 }
 
 func (p *UploadPayload) Decode(data []byte) error {
-	if err := gob.NewDecoder(bytes.NewReader(data)).Decode(&p.Readings); err != nil {
-		return fmt.Errorf("upload payload decode: %w", err)
+	if len(data) < 4 {
+		return fmt.Errorf("upload payload decode: payload too short: %d bytes", len(data))
+	}
+	count := int(binary.BigEndian.Uint32(data[:4]))
+	// 防护：count 不可能超过 len(data)/最小单条长度，防恶意大 count 触发大分配
+	if count > len(data)/minReadingLen+1 {
+		return fmt.Errorf("upload payload decode: invalid reading count: %d", count)
+	}
+	off := 4
+	p.Readings = make([]model.Reading, 0, count)
+	for i := 0; i < count; i++ {
+		var r model.Reading
+		if off+8 > len(data) {
+			return fmt.Errorf("upload payload decode: truncated id")
+		}
+		r.ID = int64(binary.BigEndian.Uint64(data[off : off+8]))
+		off += 8
+		var err error
+		if r.Device, err = readTLVString(data, &off); err != nil {
+			return fmt.Errorf("upload payload decode: device: %w", err)
+		}
+		if r.DeviceName, err = readTLVString(data, &off); err != nil {
+			return fmt.Errorf("upload payload decode: device name: %w", err)
+		}
+		if r.Point, err = readTLVString(data, &off); err != nil {
+			return fmt.Errorf("upload payload decode: point: %w", err)
+		}
+		if r.PointName, err = readTLVString(data, &off); err != nil {
+			return fmt.Errorf("upload payload decode: point name: %w", err)
+		}
+		var dt string
+		if dt, err = readTLVString(data, &off); err != nil {
+			return fmt.Errorf("upload payload decode: data type: %w", err)
+		}
+		r.DataType = model.DataType(dt)
+		if r.Value, err = readTLVString(data, &off); err != nil {
+			return fmt.Errorf("upload payload decode: value: %w", err)
+		}
+		if off+1 > len(data) {
+			return fmt.Errorf("upload payload decode: truncated quality")
+		}
+		r.Quality = model.Quality(data[off])
+		off++
+		if r.Unit, err = readTLVString(data, &off); err != nil {
+			return fmt.Errorf("upload payload decode: unit: %w", err)
+		}
+		if off+8 > len(data) {
+			return fmt.Errorf("upload payload decode: truncated timestamp")
+		}
+		r.Timestamp = int64(binary.BigEndian.Uint64(data[off : off+8]))
+		off += 8
+		p.Readings = append(p.Readings, r)
 	}
 	return nil
 }

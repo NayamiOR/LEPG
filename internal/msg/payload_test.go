@@ -201,6 +201,35 @@ func TestUploadPayload_Decode_GarbageData(t *testing.T) {
 	}
 }
 
+func TestUploadPayload_Encode_StringTooLong(t *testing.T) {
+	p := &UploadPayload{Readings: []model.Reading{{Device: string(make([]byte, 65536))}}}
+	_, err := p.Encode()
+	if err == nil {
+		t.Error("expected error for string field > 65535 bytes")
+	}
+}
+
+func TestUploadPayload_Decode_TruncatedString(t *testing.T) {
+	// 合法 payload 后截断：Count=1 + ID 完整，但第一个字符串长度声明 100 而数据不足
+	data := make([]byte, 0, 14)
+	data = append(data, 1, 0, 0, 0) // count = 1
+	data = append(data, make([]byte, 8)...) // id
+	data = append(data, 0, 100)      // device len = 100，但没有内容
+	var p UploadPayload
+	if err := p.Decode(data); err == nil {
+		t.Error("expected error for truncated string")
+	}
+}
+
+func TestUploadPayload_Decode_HugeCount(t *testing.T) {
+	// count 声明 0xFFFFFFFF，但数据只有 4 字节 → 必须拒绝，不能触发大分配
+	var p UploadPayload
+	err := p.Decode([]byte{0xFF, 0xFF, 0xFF, 0xFF})
+	if err == nil {
+		t.Error("expected error for huge reading count")
+	}
+}
+
 // ── HeartbeatPayload ─────────────────────────────────────────
 
 func TestHeartbeatPayload_RoundTrip(t *testing.T) {
