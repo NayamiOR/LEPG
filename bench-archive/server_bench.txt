@@ -1,0 +1,46 @@
+﻿goos: windows
+goarch: amd64
+pkg: LEPG/internal/server
+cpu: 12th Gen Intel(R) Core(TM) i5-12500H
+BenchmarkHandleUpload_1Reading-16       	   30345	     36532 ns/op	   11134 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   38971	     42882 ns/op	   11132 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   26565	     42513 ns/op	   11080 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   26566	     46103 ns/op	   11080 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   26732	     39239 ns/op	   11077 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   34918	     38921 ns/op	   11071 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   35738	     33594 ns/op	   11060 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   30205	     49628 ns/op	   11136 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   28052	     38519 ns/op	   11057 B/op	     252 allocs/op
+BenchmarkHandleUpload_1Reading-16       	   35292	     55237 ns/op	   11065 B/op	     252 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   17210	     89209 ns/op	   24266 B/op	     339 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   16382	     76319 ns/op	   24304 B/op	     339 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   18730	     75312 ns/op	   24423 B/op	     340 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   17403	     71905 ns/op	   24258 B/op	     339 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   16232	     76749 ns/op	   24311 B/op	     339 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   17302	     76246 ns/op	   24262 B/op	     339 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   20851	     59466 ns/op	   24332 B/op	     340 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   24798	     56673 ns/op	   24410 B/op	     341 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   25111	     51194 ns/op	   24399 B/op	     341 allocs/op
+BenchmarkHandleUpload_12Readings-16     	   25630	     50288 ns/op	   24381 B/op	     341 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    7257	    178915 ns/op	  126193 B/op	     952 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    8143	    176478 ns/op	  126024 B/op	     960 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    7503	    156389 ns/op	  126049 B/op	     952 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    7744	    173399 ns/op	  126043 B/op	     955 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    7429	    167287 ns/op	  126082 B/op	     952 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    7996	    163353 ns/op	  126030 B/op	     958 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    8239	    168342 ns/op	  126017 B/op	     961 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    8312	    161583 ns/op	  126027 B/op	     962 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    8246	    158989 ns/op	  126021 B/op	     961 allocs/op
+BenchmarkHandleUpload_100Readings-16    	    7960	    184254 ns/op	  126107 B/op	     958 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  303034	      3951 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  321110	      3782 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  324087	      3802 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  327278	      3830 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  323433	      3789 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  312841	      3661 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  332091	      3616 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  312303	      3612 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  356515	      3584 ns/op	     444 B/op	      25 allocs/op
+BenchmarkHandleUpload_DedupHit-16       	  323787	      3613 ns/op	     444 B/op	      25 allocs/op
+PASS
+ok  	LEPG/internal/server	81.653s

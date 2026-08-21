@@ -1,0 +1,36 @@
+goos: windows
+goarch: amd64
+pkg: LEPG/internal/msg
+cpu: 12th Gen Intel(R) Core(TM) i5-12500H
+BenchmarkEncode_12Readings-16             894596              1401 ns/op            2992 B/op         13 allocs/op
+BenchmarkEncode_12Readings-16             811753              1638 ns/op            2992 B/op         13 allocs/op
+BenchmarkEncode_12Readings-16             749568              1621 ns/op            2992 B/op         13 allocs/op
+BenchmarkEncode_12Readings-16             847762              1661 ns/op            2992 B/op         13 allocs/op
+BenchmarkEncode_12Readings-16             752926              1586 ns/op            2992 B/op         13 allocs/op
+BenchmarkEncode_1Reading-16              1538638               856.6 ns/op           752 B/op         13 allocs/op
+BenchmarkEncode_1Reading-16              1392342               880.1 ns/op           752 B/op         13 allocs/op
+BenchmarkEncode_1Reading-16              1390030               903.4 ns/op           752 B/op         13 allocs/op
+BenchmarkEncode_1Reading-16              1350392               886.5 ns/op           752 B/op         13 allocs/op
+BenchmarkEncode_1Reading-16              1474674               871.4 ns/op           752 B/op         13 allocs/op
+BenchmarkEncode_100Readings-16            121599              9723 ns/op           20656 B/op         13 allocs/op
+BenchmarkEncode_100Readings-16            160518              8611 ns/op           20656 B/op         13 allocs/op
+BenchmarkEncode_100Readings-16            113425              9249 ns/op           20656 B/op         13 allocs/op
+BenchmarkEncode_100Readings-16            118648              9024 ns/op           20656 B/op         13 allocs/op
+BenchmarkEncode_100Readings-16            129435              9193 ns/op           20656 B/op         13 allocs/op
+BenchmarkDecodeFrame_12Readings-16         14152             84150 ns/op            4388 B/op         32 allocs/op
+BenchmarkDecodeFrame_12Readings-16         13857             79958 ns/op            4389 B/op         32 allocs/op
+BenchmarkDecodeFrame_12Readings-16         14984             78889 ns/op            4387 B/op         32 allocs/op
+BenchmarkDecodeFrame_12Readings-16         14646             80273 ns/op            4388 B/op         32 allocs/op
+BenchmarkDecodeFrame_12Readings-16         15096             92142 ns/op            4387 B/op         32 allocs/op
+BenchmarkDecodeFrame_1Reading-16           38372             28360 ns/op            2113 B/op         32 allocs/op
+BenchmarkDecodeFrame_1Reading-16           40515             28734 ns/op            2113 B/op         32 allocs/op
+BenchmarkDecodeFrame_1Reading-16           43830             28247 ns/op            2113 B/op         32 allocs/op
+BenchmarkDecodeFrame_1Reading-16           40219             28862 ns/op            2113 B/op         32 allocs/op
+BenchmarkDecodeFrame_1Reading-16           41010             27969 ns/op            2113 B/op         32 allocs/op
+BenchmarkDecodeFrame_100Readings-16         2143            549015 ns/op           22051 B/op         32 allocs/op
+BenchmarkDecodeFrame_100Readings-16         2067            550953 ns/op           22053 B/op         32 allocs/op
+BenchmarkDecodeFrame_100Readings-16         1881            581053 ns/op           22052 B/op         32 allocs/op
+BenchmarkDecodeFrame_100Readings-16         2241            556152 ns/op           22050 B/op         32 allocs/op
+BenchmarkDecodeFrame_100Readings-16         1771            615962 ns/op           22050 B/op         32 allocs/op
+PASS
+ok      LEPG/internal/msg       48.039s
