@@ -1,6 +1,9 @@
 # Stage 1: Build
 FROM golang:1.26-alpine AS builder
 
+# 国内构建加速（默认 proxy.golang.org 在国内不可达）
+ENV GOPROXY=https://goproxy.cn,direct
+
 WORKDIR /src
 COPY go.mod go.sum ./
 RUN go mod download

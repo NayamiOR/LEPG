@@ -23,7 +23,8 @@ services:
       LOG_PATH: /app/data/logs
       DATA_PATH: /app/data/lepgs.db
     volumes:
-      - ./config/server.toml:/app/config/server.toml:ro
+      # 容器内使用 docker 专用配置（pg_host=postgres 指向 compose 服务名）
+      - ./config/server-docker.toml:/app/config/server.toml:ro
       - lepg-data:/app/data
     depends_on:
       postgres:

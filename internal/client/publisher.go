@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strconv"
+	"time"
 
 	"LEPG/internal/model"
 
@@ -21,7 +22,12 @@ type ClientPublisher struct {
 func NewClientPublisher(brokerAddr string) (*ClientPublisher, error) {
 	opts := mqtt.NewClientOptions().
 		AddBroker(brokerAddr).
-		SetClientID("lepgc-pub-" + uuid.New().String()[:8])
+		SetClientID("lepgc-pub-" + uuid.New().String()[:8]).
+		// 本地 broker 与 publisher 在同一进程内异步启动，首次连接可能落在
+		// Serve() 就绪之前，开启连接重试以消除启动竞态。
+		SetConnectRetry(true).
+		SetConnectRetryInterval(500 * time.Millisecond).
+		SetConnectTimeout(5 * time.Second)
 
 	client := mqtt.NewClient(opts)
 	if token := client.Connect(); token.Wait() && token.Error() != nil {

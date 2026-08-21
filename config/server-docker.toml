@@ -1,0 +1,22 @@
+# LEPG 服务端配置 - E2E 测试环境 (124.223.200.168)
+log_level = 'info'
+log_path = '/opt/lepg/logs/'
+port = 8883
+
+# PostgreSQL
+pg_host = "postgres"
+pg_port = 5432
+pg_user = "lepgs"
+pg_password = "lepgs123"
+pg_dbname = "lepgs"
+pg_sslmode = "disable"
+
+# MQTT Broker（对外输出 Pull 通道）
+mqtt_tcp = "0.0.0.0:1883"
+mqtt_ws = "0.0.0.0:8083"
+
+# 客户端认证
+[[clients]]
+sn = "CLIENT001"
+token = "token123456"
+description = "E2E测试客户端1"
