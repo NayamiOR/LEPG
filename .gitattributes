@@ -1,0 +1,9 @@
+# GitHub Linguist 语言统计配置
+#
+# scripts/variance/ 下的基准分析 notebook 内嵌大量绘图输出，体积占语言统计的
+# 84%，会把仓库主语言标成 Jupyter Notebook。它们是分析记录而非产品代码，
+# 按 Linguist 官方机制标注为 documentation 后不计入语言统计。
+*.ipynb linguist-documentation
+
+# pprof 剖析产物为二进制，显式声明避免被按文本处理
+*.prof binary
