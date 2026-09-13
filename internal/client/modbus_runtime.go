@@ -228,8 +228,31 @@ func (rt *ModbusRuntime) executeWrite(cmd *writeCmd) error {
 		return fmt.Errorf("point %s not found", cmd.pointName)
 	}
 
-	// 检查 function_code 与 data_type 兼容性
+	// 配置点位以读功能码定义，写操作前先映射为对应写功能码：
+	//   FC1(ReadCoils)          -> FC5(WriteSingleCoil)
+	//   FC3(ReadHoldingRegs)    -> FC6(WriteSingleReg, 16bit) / FC16(WriteMultiReg, 32bit)
+	//   FC2/FC4(只读输入)        -> 拒绝写
+	writeFC := point.FunctionCode
 	switch point.FunctionCode {
+	case 1:
+		writeFC = 5
+	case 3:
+		switch point.DataType {
+		case model.DataTypeInt16, model.DataTypeUint16:
+			writeFC = 6
+		case model.DataTypeInt32, model.DataTypeUint32, model.DataTypeFloat32:
+			writeFC = 16
+		default:
+			return fmt.Errorf("unsupported data type for write: %s", point.DataType)
+		}
+	case 2, 4:
+		return fmt.Errorf("point %s is read-only (function code %d)", cmd.pointName, point.FunctionCode)
+	default:
+		return fmt.Errorf("unsupported write function code: %d", point.FunctionCode)
+	}
+
+	// 检查写功能码与 data_type 兼容性
+	switch writeFC {
 	case 5:
 		if point.DataType != model.DataTypeBool {
 			return fmt.Errorf("FC5 requires bool data type, got %s", point.DataType)
@@ -245,14 +268,12 @@ func (rt *ModbusRuntime) executeWrite(cmd *writeCmd) error {
 		if point.DataType == model.DataTypeBool || point.DataType == model.DataTypeInt16 || point.DataType == model.DataTypeUint16 {
 			return fmt.Errorf("FC16 requires int32/uint32/float32 data type, got %s (use FC6 for single register)", point.DataType)
 		}
-	default:
-		return fmt.Errorf("unsupported write function code: %d", point.FunctionCode)
 	}
 
 	// Reverse scale/offset: raw = (value - offset) / scale
 	raw := (cmd.value - point.Offset) / point.Scale
 
-	switch point.FunctionCode {
+	switch writeFC {
 	case 5:
 		return rt.writeCoil(point.Address, raw)
 	case 6:

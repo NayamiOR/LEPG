@@ -23,7 +23,11 @@ services:
       LOG_PATH: /app/data/logs
       DATA_PATH: /app/data/lepgs.db
     volumes:
-      - ./config/server.toml:/app/config/server.toml:ro
+      # 默认用开发者本地的 config/server.toml（已被 .gitignore 忽略）。
+      # 需要容器专用配置（pg_host=postgres）时显式覆盖：
+      #   LEPG_CONFIG_FILE=./config/server-docker.toml docker compose up -d
+      # 模板见 config/server-docker.toml.example
+      - ${LEPG_CONFIG_FILE:-./config/server.toml}:/app/config/server.toml:ro
       - lepg-data:/app/data
     depends_on:
       postgres:

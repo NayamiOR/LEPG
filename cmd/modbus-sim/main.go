@@ -23,6 +23,7 @@ const (
 	fcReadDiscreteInputs     = 0x02
 	fcReadHoldingRegisters   = 0x03
 	fcReadInputRegisters     = 0x04
+	fcWriteSingleCoil        = 0x05
 	fcWriteSingleRegister    = 0x06
 	fcWriteMultipleRegisters = 0x10
 )
@@ -141,6 +142,8 @@ func (s *deviceStore) processPDU(pdu []byte) []byte {
 		return s.readBits(s.coils, pdu)
 	case fcReadDiscreteInputs:
 		return s.readBits(s.di, pdu)
+	case fcWriteSingleCoil:
+		return s.writeSingleCoil(pdu)
 	case fcWriteSingleRegister:
 		return s.writeSingleReg(pdu)
 	case fcWriteMultipleRegisters:
@@ -204,6 +207,23 @@ func (s *deviceStore) readBits(data map[uint16]bool, pdu []byte) []byte {
 }
 
 // writeSingleReg 处理 FC6
+func (s *deviceStore) writeSingleCoil(pdu []byte) []byte {
+	if len(pdu) < 5 {
+		return exceptResp(fcWriteSingleCoil, 0x03)
+	}
+	addr := binary.BigEndian.Uint16(pdu[1:3])
+	val := binary.BigEndian.Uint16(pdu[3:5])
+	switch val {
+	case 0x0000:
+		s.coils[addr] = false
+	case 0xFF00:
+		s.coils[addr] = true
+	default:
+		return exceptResp(fcWriteSingleCoil, 0x03)
+	}
+	return pdu[:5] // echo
+}
+
 func (s *deviceStore) writeSingleReg(pdu []byte) []byte {
 	if len(pdu) < 5 {
 		return exceptResp(fcWriteSingleRegister, 0x03)
