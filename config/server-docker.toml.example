@@ -1,0 +1,35 @@
+# LEPG 服务端配置示例 —— Docker Compose 环境
+#
+# 用法：复制为 config/server-docker.toml（该文件名已被 .gitignore 忽略，不会入库），
+# 再由 docker-compose.yml 通过 LEPG_CONFIG_FILE 指向它：
+#
+#   cp config/server-docker.toml.example config/server-docker.toml
+#   LEPG_CONFIG_FILE=./config/server-docker.toml docker compose up -d
+#
+# 与 server.toml.example 的唯一区别：pg_host 指向 compose 服务名 postgres，
+# 而不是 127.0.0.1（容器内的 localhost 不是宿主机）。
+# 因此 pg_user / pg_password / pg_dbname 必须与 docker-compose.yml 中
+# postgres 服务的 POSTGRES_USER / POSTGRES_PASSWORD / POSTGRES_DB 保持一致。
+log_level = 'info'
+log_path = '/opt/lepg/logs/'
+port = 8883
+
+# PostgreSQL（容器内主机名 = compose 服务名）
+pg_host = "postgres"
+pg_port = 5432
+pg_user = "lepgs"
+pg_password = "lepgs123"   # 需与 docker-compose.yml 的 POSTGRES_PASSWORD 一致
+pg_dbname = "lepgs"
+pg_sslmode = "disable"
+
+# MQTT Broker（对外输出 Pull 通道）
+mqtt_tcp = "0.0.0.0:1883"
+mqtt_ws = "0.0.0.0:8083"
+
+# 客户端认证
+# 注意：每个要接入的 SN 都必须在此注册，否则握手会被拒绝（msg.BadSn）。
+# 压测时注册数量需与压测客户端数量一致（loadgen 默认 SN = LOADGEN-001..N）。
+[[clients]]
+sn = "CLIENT001"
+token = "your_token_here"   # 需与客户端配置一致
+description = "示例客户端1"

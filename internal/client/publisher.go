@@ -18,6 +18,15 @@ type ClientPublisher struct {
 	client mqtt.Client
 }
 
+// mqttConnectWait bounds how long NewClientPublisher waits for the broker.
+//
+// ConnectRetry 的语义是"失败就持续重连、token 仅在连接成功时才完成"，
+// 因此这里不能用无超时的 token.Wait()：broker 不可达时它会永久阻塞，
+// 让客户端启动静默挂死（既不报错也不退出）。用 WaitTimeout 给一个有界等待
+// 窗口：500ms 重试间隔 × 20 次足以覆盖"broker 尚未 Serve 就绪"的启动竞态，
+// 同时保证不可达时能快速失败并上报。
+const mqttConnectWait = 10 * time.Second
+
 // NewClientPublisher creates and connects an MQTT client to the given broker.
 func NewClientPublisher(brokerAddr string) (*ClientPublisher, error) {
 	opts := mqtt.NewClientOptions().
@@ -30,8 +39,14 @@ func NewClientPublisher(brokerAddr string) (*ClientPublisher, error) {
 		SetConnectTimeout(5 * time.Second)
 
 	client := mqtt.NewClient(opts)
-	if token := client.Connect(); token.Wait() && token.Error() != nil {
-		return nil, fmt.Errorf("connect to mqtt broker at %s: %w", brokerAddr, token.Error())
+	token := client.Connect()
+	if !token.WaitTimeout(mqttConnectWait) {
+		client.Disconnect(0)
+		return nil, fmt.Errorf("connect to mqtt broker at %s: timeout after %s", brokerAddr, mqttConnectWait)
+	}
+	if err := token.Error(); err != nil {
+		client.Disconnect(0)
+		return nil, fmt.Errorf("connect to mqtt broker at %s: %w", brokerAddr, err)
 	}
 
 	slog.Info("mqtt publisher connected", "broker", brokerAddr)
