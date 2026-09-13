@@ -29,19 +29,23 @@ import (
 )
 
 var (
-	server    = flag.String("server", "127.0.0.1:8883", "server address host:port")
-	clients   = flag.Int("clients", 10, "number of concurrent client connections")
-	duration  = flag.Duration("duration", 30*time.Second, "load duration")
-	batch     = flag.Int("batch", 100, "readings per Upload frame")
-	snPrefix  = flag.String("sn-prefix", "LOADGEN", "client SN prefix (SN = prefix-001..N)")
-	token     = flag.String("token", "token123456", "client token")
-	devPrefix = flag.String("dev-prefix", "dev", "device name prefix (device = prefix-<sn尾号>, 跨压测端用不同前缀隔离)")
-	verbose   = flag.Bool("v", false, "verbose per-client logging")
+	server         = flag.String("server", "127.0.0.1:8883", "server address host:port")
+	clients        = flag.Int("clients", 10, "number of concurrent client connections")
+	duration       = flag.Duration("duration", 30*time.Second, "load duration")
+	batch          = flag.Int("batch", 100, "readings per Upload frame")
+	snPrefix       = flag.String("sn-prefix", "LOADGEN", "client SN prefix (SN = prefix-001..N)")
+	token          = flag.String("token", "token123456", "client token")
+	devPrefix      = flag.String("dev-prefix", "dev", "device name prefix (device = prefix-<sn尾号>, 跨压测端用不同前缀隔离)")
+	reportInterval = flag.Duration("report-interval", 0, "print per-window throughput every interval (0 = disabled)")
+	idle           = flag.Bool("idle", false, "hold connection after handshake without sending data (connection-capacity test)")
+	verbose        = flag.Bool("v", false, "verbose per-client logging")
+
+	totalSent atomic.Int64
 )
 
 type clientResult struct {
 	sn        string
-	sent      int64 // readings sent
+	sent      int64 // readings acked（只在 ACK OK 后累加；throughput 用的是此口径，非发出量）
 	acked     int64 // frames acked OK
 	failed    int64 // frames failed (non-OK ack / io error)
 	latencies []time.Duration
@@ -58,6 +62,10 @@ func main() {
 
 	fmt.Printf("== loadgen start ==\n  server=%s clients=%d duration=%s batch=%d\n",
 		*server, *clients, *duration, *batch)
+
+	if *reportInterval > 0 {
+		go reportLoop(*duration)
+	}
 
 	start := time.Now()
 	var wg sync.WaitGroup
@@ -90,10 +98,15 @@ func main() {
 	frameCount := int64(len(allLat))
 	fmt.Printf("\n== loadgen done ==\n")
 	fmt.Printf("  elapsed:        %s\n", elapsed.Round(time.Millisecond))
-	fmt.Printf("  readings sent:  %d\n", totalSent)
-	fmt.Printf("  frames acked:   %d\n", totalAcked)
-	fmt.Printf("  frames failed:  %d\n", totalFailed)
-	fmt.Printf("  throughput:     %.0f readings/s\n", tps)
+	if *idle {
+		fmt.Printf("  connections established: %d\n", totalAcked)
+		fmt.Printf("  connections failed:      %d\n", totalFailed)
+	} else {
+		fmt.Printf("  readings sent:  %d\n", totalSent)
+		fmt.Printf("  frames acked:   %d\n", totalAcked)
+		fmt.Printf("  frames failed:  %d\n", totalFailed)
+		fmt.Printf("  throughput:     %.0f readings/s\n", tps)
+	}
 	if frameCount > 0 {
 		sort.Slice(allLat, func(i, j int) bool { return allLat[i] < allLat[j] })
 		p := func(q float64) time.Duration {
@@ -112,6 +125,26 @@ func main() {
 			p(0.99).Round(time.Microsecond),
 			allLat[frameCount-1].Round(time.Microsecond))
 	}
+}
+
+// reportLoop 每 reportInterval 打印一次窗口内已确认读数与瞬时吞吐（用于 QPS 曲线）。
+func reportLoop(total time.Duration) {
+	ticker := time.NewTicker(*reportInterval)
+	defer ticker.Stop()
+	start := time.Now()
+	lastN := int64(0)
+	lastT := start
+	for t := range ticker.C {
+		cur := totalSent.Load()
+		dt := t.Sub(lastT).Seconds()
+		if dt > 0 {
+			fmt.Printf("[t=%s] +%d readings (%.0f/s) total=%d\n",
+				t.Sub(start).Round(time.Second), cur-lastN, float64(cur-lastN)/dt, cur)
+		}
+		lastN = cur
+		lastT = t
+	}
+	_ = total
 }
 
 func runClient(r *clientResult) {
@@ -145,15 +178,50 @@ func runClient(r *clientResult) {
 		return
 	}
 	ack, err := readAck(conn, factory, msg.MsgTypeHandshakeAck)
-	if err != nil || ack.Code != msg.Ok {
-		slog.Error("handshake failed", "sn", r.sn, "code", ack.Code, "err", err)
+	// 注意：readAck 出错时返回 nil ack，必须先判 err 再取 ack.Code，
+	// 否则压测中任何一次握手失败都会 nil 解引用 panic —— 而汇总输出在
+	// wg.Wait() 之后，进程崩溃会连带丢掉已采集的全部数据。
+	if err != nil {
+		r.failed++
+		slog.Error("handshake read failed", "sn", r.sn, "err", err)
+		return
+	}
+	if ack.Code != msg.Ok {
+		r.failed++
+		slog.Error("handshake rejected", "sn", r.sn, "code", ack.Code)
 		return
 	}
 	if *verbose {
 		slog.Info("authenticated", "sn", r.sn)
 	}
 
-	// 2. 持续上传
+	// 2a. 保活模式（连接承载测试）：握手成功后不发数据，仅定期发心跳保持连接存活
+	if *idle {
+		r.acked++ // 连接建立成功
+		hbDeadline := time.Now().Add(*duration)
+		lastHb := time.Now()
+		for time.Now().Before(hbDeadline) {
+			if time.Since(lastHb) >= 30*time.Second {
+				m, err := factory.NewMsg(msg.MsgTypeHeartbeat, &msg.HeartbeatPayload{})
+				if err != nil {
+					return
+				}
+				frame, err := m.Encode()
+				if err != nil {
+					return
+				}
+				if _, err := conn.Write(frame); err != nil {
+					r.failed++
+					return
+				}
+				lastHb = time.Now()
+			}
+			time.Sleep(1 * time.Second)
+		}
+		return
+	}
+
+	// 2b. 持续上传
 	deadline := time.Now().Add(*duration)
 	for time.Now().Before(deadline) {
 		payload := &msg.UploadPayload{Readings: buildReadings(r.sn, *batch)}
@@ -174,17 +242,27 @@ func runClient(r *clientResult) {
 			return
 		}
 		ack, err := readAck(conn, factory, msg.MsgTypeUploadAck)
-		lat := time.Since(t0)
-		r.latencies = append(r.latencies, lat)
-		if err != nil || ack.Code != msg.Ok {
+		// 同样先判 err：失败时 ack 为 nil，且此时 t0 起的等待往往是
+		// 读取超时（可达 conn deadline 级别），计入 RTT 会把 P95/P99
+		// 严重拉高 —— 因此只在读到合法 ACK 后才记录延迟。
+		if err != nil {
 			r.failed++
 			if *verbose {
-				slog.Warn("upload ack", "sn", r.sn, "code", ack.Code, "err", err)
+				slog.Warn("upload ack read failed", "sn", r.sn, "err", err)
+			}
+			continue
+		}
+		r.latencies = append(r.latencies, time.Since(t0))
+		if ack.Code != msg.Ok {
+			r.failed++
+			if *verbose {
+				slog.Warn("upload rejected", "sn", r.sn, "code", ack.Code)
 			}
 			continue
 		}
 		r.acked++
 		r.sent += int64(*batch)
+		totalSent.Add(int64(*batch))
 	}
 }
 
@@ -238,12 +316,15 @@ func readAck(conn net.Conn, factory *msg.MsgFactory, expectType uint8) (*ackResu
 		return nil, err
 	}
 	_ = factory
-	_ = expectType
+	// 校验帧类型：否则任何非 ACK 帧（心跳响应、Push 等）都会被按 ACK 载荷
+	// 布局解析，Code 位置恰好命中 msg.Ok 时就会虚假判成功，低估错误率。
+	if msgType != expectType {
+		return nil, fmt.Errorf("unexpected frame type: got %d, want %d", msgType, expectType)
+	}
 	// AckPayload wire: [MsgID:2B BE][Code:1B]
 	if payloadLen < 3 {
 		return nil, fmt.Errorf("ack payload too short: %d", payloadLen)
 	}
-	_ = msgType
 	return &ackResult{
 		MsgID: binary.BigEndian.Uint16(rest[0:2]),
 		Code:  rest[2],
