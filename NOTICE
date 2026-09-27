@@ -1,0 +1,39 @@
+LEPG
+Copyright 2026 NayamiOR
+
+This product includes software developed as part of the LEPG project
+(https://github.com/NayamiOR/LEPG).
+
+
+========================================================================
+Third-party components
+========================================================================
+
+LEPG is distributed as a compiled binary that links the following
+third-party Go modules. None of them are modified by LEPG; each module
+remains under its own license, which applies to that module's portion
+of the work.
+
+  github.com/spf13/cobra                 Apache License 2.0
+  github.com/prometheus/client_golang    Apache License 2.0
+  github.com/spf13/viper                 MIT License
+  github.com/SladkyCitron/slogcolor      MIT License
+  github.com/wind-c/comqtt/v2            MIT License
+  gopkg.in/natefinch/lumberjack.v2       MIT License
+  github.com/uptrace/bun                 BSD 2-Clause License
+  github.com/redis/go-redis/v9           BSD 2-Clause License
+  github.com/google/uuid                 BSD 3-Clause License
+  github.com/goburrow/modbus             BSD 3-Clause License
+  modernc.org/sqlite                     BSD 3-Clause License
+  github.com/eclipse/paho.mqtt.golang    Eclipse Public License 2.0
+                                         (dual-licensed under the
+                                         Eclipse Distribution License 1.0)
+
+The complete transitive dependency list, with pinned versions, is
+recorded in go.mod and go.sum. Full license texts ship with each
+module and are available from the corresponding upstream repository.
+
+The Eclipse Public License 2.0 requires that recipients be able to
+obtain the source code of the EPL-covered component. The unmodified
+source of github.com/eclipse/paho.mqtt.golang is available at
+https://github.com/eclipse/paho.mqtt.golang

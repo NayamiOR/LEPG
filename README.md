@@ -2,6 +2,8 @@
 
 > **Lightweight Edge Piercing Gateway** — 轻量级 IoT 边缘网关与数据中继系统
 
+[![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](https://www.apache.org/licenses/LICENSE-2.0)
+
 ## 特性速览
 
 - **云边隧道**：自研 TLV 隧道协议 + 握手鉴权 + 心跳保活 + 断线自动重连，弱网环境高可靠传输
@@ -541,3 +543,13 @@ LEPG 使用自定义的 TLV (Type-Length-Value) 协议进行数据传输：
 - 通用 MQTT Sinker（对接非 TB 平台）
 - 数据自动清理（TTL）
 - HTTP API 与 Webhook
+
+---
+
+## 许可证
+
+本项目基于 [Apache License 2.0](LICENSE) 开源，版权所有 © 2026 NayamiOR。
+
+你可以自由使用、修改、分发本软件，包括用于商业目的，前提是保留版权声明与许可证副本；本软件按“原样”提供，不附带任何明示或暗示的担保。
+
+第三方依赖的许可证信息见 [NOTICE](NOTICE)。
